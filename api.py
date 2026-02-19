@@ -14,6 +14,12 @@ import json
 import uuid
 from memory_postgres import PostgresMemory
 # =====================================================
+# ✅ NEW: Added imports for file upload
+# =====================================================
+from fastapi import File, UploadFile, HTTPException
+import shutil
+from typing import List
+# =====================================================
 
 app = FastAPI()
 
@@ -74,12 +80,59 @@ def get_directory_listing(path: str) -> list:
         return []
 # =====================================================
 
+# =====================================================
+# ✅ NEW: File upload endpoint
+# Allows users to upload files from their computer
+# =====================================================
+@app.post("/api/upload")
+async def upload_files(files: List[UploadFile] = File(...)):
+    """Upload files to the current working directory"""
+    try:
+        # Get current directory or use default
+        upload_dir = get_current_dir()
+        if not upload_dir:
+            # If no directory set, create one
+            upload_dir = "/app/uploads" if os.name != 'nt' else "./uploads"
+            os.makedirs(upload_dir, exist_ok=True)
+            set_current_dir(upload_dir)
+        
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        saved_files = []
+        for file in files:
+            # Security: Sanitize filename
+            safe_filename = os.path.basename(file.filename)
+            file_path = os.path.join(upload_dir, safe_filename)
+            
+            # Save file
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            saved_files.append({
+                "name": safe_filename,
+                "path": file_path,
+                "size": os.path.getsize(file_path)
+            })
+        
+        print(f"[DEBUG] Uploaded {len(saved_files)} files to {upload_dir}")
+        
+        return {
+            "success": True,
+            "path": upload_dir,
+            "files": saved_files
+        }
+    except Exception as e:
+        print(f"[DEBUG] Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+# =====================================================
+
 @app.get("/")
 async def root():
     return {
         "status": "online",
         "message": "Terminal Agent API is running",
         "websocket": "/ws",
+        "upload": "/api/upload",
         "usage": "Connect to wss://your-app.railway.app/ws for WebSocket"
     }
 
@@ -88,7 +141,13 @@ async def root():
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     print("[DEBUG] WebSocket connected")
-    await ws.send_text("📌 Session started.\nUse: setpath <absolute_path>\n")
+    
+    # =================================================
+    # 🔁 REMOVED: setpath requirement message
+    # Previously: "Use: setpath <absolute_path>"
+    # Now: Just welcome message
+    # =================================================
+    await ws.send_text("📌 Session started. Click folders to navigate, then type commands.\n")
 
     # =================================================
     # UNCHANGED: Agent path context updater
@@ -157,19 +216,28 @@ async def ws_endpoint(ws: WebSocket):
         # Now: Returns structured directory listing
         # =================================================
         if msg_type == "list_dir":
+            current = get_current_dir()
+            if not current:
+                await ws.send_text(json.dumps({
+                    "type": "directory_list",
+                    "current_dir": "No directory selected",
+                    "files": []
+                }))
+                continue
+                
             target_path = data.get("path", ".")
             
             # Resolve path relative to current directory
             if target_path == ".":
-                target_path = get_current_dir()
+                target_path = current
             elif target_path == "..":
-                target_path = os.path.dirname(get_current_dir())
+                target_path = os.path.dirname(current)
             else:
-                target_path = os.path.join(get_current_dir(), target_path)
+                target_path = os.path.join(current, target_path)
             
             # Ensure we don't escape sandbox
-            if not target_path.startswith(get_current_dir()):
-                target_path = get_current_dir()
+            if not target_path.startswith(current):
+                target_path = current
             
             files = get_directory_listing(target_path)
             
@@ -280,48 +348,18 @@ async def ws_endpoint(ws: WebSocket):
         print(f"[DEBUG] Received user query: {user_query}")
 
         # =================================================
-        # 🔁 MODIFIED: setpath handling with file browser integration
-        # PREVIOUSLY: Only set path
-        # NOW: Sets path AND sends directory listing to file browser
+        # 🔁 REMOVED: setpath handling - no longer needed
+        # Users navigate via file browser only
         # =================================================
-        if user_query.lower().startswith("setpath "):
-            path = user_query[8:].strip()
-            
-            # 🔁 MODIFIED: Removed automatic path conversion
-            # PREVIOUSLY: Converted Windows paths to /app on Linux
-            # NOW: Let user specify correct path for their platform
-            if os.name != 'nt':  # On Linux/Railway
-                if not os.path.exists(path):
-                    await ws.send_text(f"❌ Path does not exist on server: {path}\n")
-                    continue
-
-            abs_path = os.path.abspath(path)
-
-            if os.path.isdir(abs_path):
-                set_current_dir(abs_path)
-                set_user_path(abs_path)
-                update_session_sandbox(agent, get_current_dir())
-                update_agent_context(agent, get_current_dir())
-                
-                # ✅ NEW: Send initial directory listing to file browser
-                files = get_directory_listing(abs_path)
-                await ws.send_text(json.dumps({
-                    "type": "directory_list",
-                    "current_dir": abs_path,
-                    "files": files
-                }))
-                
-                await ws.send_text(f"📁 Working directory set to:\n{get_current_dir()}\n")
-                print(f"[DEBUG] Set working directory to {get_current_dir()}")
-            else:
-                await ws.send_text("❌ Invalid path\n")
-                print(f"[DEBUG] Invalid path attempted: {abs_path}")
-            continue
+        # The entire setpath block has been removed
+        
         # =================================================
-
-        if get_current_dir() is None:
-            await ws.send_text("⚠️ Please set working directory first using:\nsetpath <path>\n")
-            continue
+        # 🔁 REMOVED: Path requirement check
+        # No longer forcing users to set path first
+        # =================================================
+        # if get_current_dir() is None:
+        #     await ws.send_text("⚠️ Please set working directory first using:\nsetpath <path>\n")
+        #     continue
 
         # =================================================
         # 🔁 MODIFIED STREAMING LOOP
@@ -334,11 +372,19 @@ async def ws_endpoint(ws: WebSocket):
         # =================================================
         
         agent_response = ""
+        current_dir = get_current_dir()
+        
+        # If no directory set, use a default for commands
+        if not current_dir:
+            default_dir = "/app" if os.name != 'nt' else os.getcwd()
+            set_current_dir(default_dir)
+            current_dir = default_dir
+        
         history = memory.load_chat_messages(chat_id) if chat_id else []
         print(f"[DEBUG] Loaded history: {len(history)} messages")
-        
+        print(f"[DEBUG] Current directory: {current_dir}")
 
-        for chunk in run_agent_stream(agent, user_query, get_current_dir(), history):
+        for chunk in run_agent_stream(agent, user_query, current_dir, history):
             print(f"[DEBUG] chunk: {chunk}") 
             agent_response += chunk
             await ws.send_text(chunk)

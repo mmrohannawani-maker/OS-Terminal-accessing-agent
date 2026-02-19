@@ -47,13 +47,14 @@ export default function Terminal({
   // Previously: No file browser
   // Now: Track current directory, files, and visibility
   // =====================================================
-  const [currentDir, setCurrentDir] = useState<string>("/app");
+  const [currentDir, setCurrentDir] = useState<string>("");
   const [fileList, setFileList] = useState<FileItem[]>([]);
   const [showFileBrowser, setShowFileBrowser] = useState<boolean>(true);
   // =====================================================
 
   const bufferRef = useRef<string[]>([]);
   const typingRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const typeNextChar = () => {
     if (bufferRef.current.length === 0) {
@@ -112,6 +113,72 @@ export default function Terminal({
   const handleFileClick = (file: FileItem) => {
     if (!chatId) return;
     sendMessage(`cat ${file.name}`, chatId);
+  };
+  // =====================================================
+
+  // =====================================================
+  // ✅ NEW: Handle file upload
+  // Allows users to upload files from their computer
+  // =====================================================
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    const formData = new FormData();
+    Array.from(files).forEach(file => {
+      formData.append('files', file);
+    });
+    
+    try {
+      setMessages(prev => [...prev, { role: "user", content: `$ Uploading ${files.length} file(s)...` }]);
+      
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setMessages(prev => [...prev, { 
+          role: "agent", 
+          content: `✅ Uploaded ${data.files.length} files to ${data.path}` 
+        }]);
+        
+        // Update current directory and refresh file list
+        if (data.path) {
+          setCurrentDir(data.path);
+          requestDirectoryListing(data.path);
+          
+          // Tell agent to use this directory
+          if (chatId) {
+            sendMessage(`cd ${data.path}`, chatId);
+          }
+        }
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "agent", content: `❌ Upload failed: ${err}` }]);
+    }
+    
+    // Clear input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+  // =====================================================
+
+  // =====================================================
+  // ✅ NEW: Handle folder picker (browser support may vary)
+  // =====================================================
+  const handleFolderPicker = async () => {
+    try {
+      // @ts-ignore - Webkit API for directory picker
+      const dirHandle = await window.showDirectoryPicker();
+      alert(`Selected folder: ${dirHandle.name}\nPlease upload files using the upload button.`);
+    } catch (err) {
+      // User cancelled or browser doesn't support
+      console.log("Folder picker cancelled or not supported");
+    }
   };
   // =====================================================
 
@@ -186,11 +253,11 @@ export default function Terminal({
   // =================================================
   useEffect(() => {
     if (isConnected) {
-      console.log("Connected. Use 'cd' to change directories, then regular commands.");
+      console.log("Connected. Use file browser to navigate, then type commands.");
       
       setMessages((prev) => [
         ...prev,
-        { role: "agent", content: "✅ Connected. Use 'cd' to navigate, then commands like 'mkdir', 'create file', etc." }
+        { role: "agent", content: "✅ Connected. Use file browser to navigate, then type commands like 'create file', 'mkdir', etc." }
       ]);
       
       // Request initial directory listing
@@ -226,16 +293,38 @@ export default function Terminal({
       </h1>
 
       {/* ================================================= */}
-      {/* ✅ NEW: File Browser Toggle Button */}
+      {/* ✅ NEW: File Browser Controls */}
       {/* Previously: No file browser controls */}
-      {/* Now: Show/hide file browser */}
+      {/* Now: Toggle, upload, and folder picker */}
       {/* ================================================= */}
-      <div className="mb-2 flex gap-2">
+      <div className="mb-2 flex gap-2 flex-wrap">
         <button
           onClick={() => setShowFileBrowser(!showFileBrowser)}
           className="text-xs bg-zinc-800 px-2 py-1 rounded hover:bg-zinc-700"
         >
           {showFileBrowser ? "📁 Hide Files" : "📁 Show Files"}
+        </button>
+        
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="text-xs bg-blue-600 px-3 py-1 rounded hover:bg-blue-700"
+        >
+          📤 Upload Files
+        </button>
+        
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          className="hidden"
+          multiple
+        />
+        
+        <button
+          onClick={handleFolderPicker}
+          className="text-xs bg-purple-600 px-3 py-1 rounded hover:bg-purple-700"
+        >
+          📁 Select Folder
         </button>
       </div>
       {/* ================================================= */}
@@ -247,7 +336,7 @@ export default function Terminal({
       {/* ================================================= */}
       {showFileBrowser && (
         <FileBrowser
-          currentDir={currentDir}
+          currentDir={currentDir || "No directory selected"}
           files={fileList}
           onNavigate={handleNavigate}
           onFileClick={handleFileClick}
@@ -259,7 +348,7 @@ export default function Terminal({
       <div className="flex-1 overflow-y-auto bg-zinc-950 p-3 rounded text-sm font-mono whitespace-pre-wrap">
         {messages.length === 0 && (
           <div className="text-zinc-500">
-            Connected. Type a command below.
+            Connected. Use file browser to navigate, then type commands.
           </div>
         )}
 
