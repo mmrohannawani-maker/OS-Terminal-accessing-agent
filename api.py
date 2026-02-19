@@ -40,6 +40,15 @@ agent, _ = build_terminal_agent()
 memory = PostgresMemory()
 # =====================================================
 
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "message": "Terminal Agent API is running",
+        "websocket": "/ws",
+        "usage": "Connect to wss://your-app.railway.app/ws for WebSocket"
+    }
+
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):

@@ -48,7 +48,10 @@ export default function Terminal({
     setTimeout(typeNextChar, 15);
   };
 
-  const { sendMessage, sendSetPath, loadChat, isConnected } = useWebSocket(
+  // 🔁 FIXED: Removed unused 'sendSetPath' from destructuring
+  // Previously: const { sendMessage, sendSetPath, loadChat, isConnected } = useWebSocket(...)
+  // Now: Only using what we need
+  const { sendMessage, loadChat, isConnected } = useWebSocket(
     (data: string) => {
       // ✅ Log received chunk at the terminal level
       console.log("🖥 Terminal received chunk:", data);
@@ -78,10 +81,19 @@ export default function Terminal({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 🔁 REPLACED: Path prompt removed - now using relative paths only
+  // Previously: useEffect with prompt for absolute path
+  // Now: No path prompt - users will use 'cd' commands instead
   useEffect(() => {
     if (isConnected) {
-      const path = prompt("Enter working directory (absolute path):");
-      if (path?.trim()) sendSetPath(path.trim());
+      // ✅ NEW: No path prompt - users will navigate with 'cd' commands
+      console.log("Connected. Use 'cd' to change directories, then regular commands.");
+      
+      // Optionally add a welcome message about using relative paths
+      setMessages((prev) => [
+        ...prev,
+        { role: "agent", content: "✅ Connected. Use 'cd' to navigate, then commands like 'mkdir', 'create file', etc." }
+      ]);
     }
   }, [isConnected]);
 
