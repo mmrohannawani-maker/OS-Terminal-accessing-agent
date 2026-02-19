@@ -12,7 +12,20 @@ class PostgresMemory:
     """Single thread PostgreSQL memory - ONE conversation only"""
     
     def __init__(self):
-        self.db_url = os.getenv("POSTGRES_URL", "postgresql://postgres:Rohan123@localhost:5432/OS_agent")
+        # 🔁 REPLACED: Hardcoded localhost fallback with Railway-compatible logic
+        # Previously: self.db_url = os.getenv("POSTGRES_URL", "postgresql://postgres:Rohan123@localhost:5432/OS_agent")
+        
+        # Try multiple possible environment variable names (Railway uses DATABASE_URL)
+        self.db_url = (
+            os.getenv("DATABASE_URL") or 
+            os.getenv("POSTGRES_URL") or 
+            "postgresql://postgres:Rohan123@localhost:5432/OS_agent"  # fallback for local dev
+        )
+        
+        # ✅ NEW: Check if URL points to localhost (prevents production crashes)
+        if 'localhost' in self.db_url or '127.0.0.1' in self.db_url:
+            print("⚠️  Using local database URL. For production, set DATABASE_URL in Railway.")
+        
         self._init_db()
        # print("✅ PostgreSQL memory initialized")
     
@@ -241,4 +254,4 @@ class PostgresMemory:
             conn.close()
         except Exception as e:
             print(f"❌ Error deleting chat: {e}")
-
+            
