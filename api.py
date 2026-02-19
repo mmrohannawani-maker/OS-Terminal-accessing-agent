@@ -256,3 +256,9 @@ async def ws_endpoint(ws: WebSocket):
             print(f"[DEBUG] Saved assistant response, length={len(agent_response)}")
 
         # =================================================
+
+# At the VERY BOTTOM of api.py, add this:
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
