@@ -128,7 +128,7 @@ async def ws_endpoint(ws: WebSocket):
                     {"id": str(cid), "title": title}
                     for cid, title in chats
                 ],
-                "requestId": data.get("requestId")  # <--- add this
+                "requestId": data.get("requestId")
             }))
             continue
         # =================================================
@@ -148,7 +148,7 @@ async def ws_endpoint(ws: WebSocket):
                 "type": "chat_created",
                 "chat_id": chat_id,
                 "title": title,
-                "requestId": data.get("requestId")  # <--- add this
+                "requestId": data.get("requestId")
             }))
             continue
         # =================================================
@@ -165,7 +165,7 @@ async def ws_endpoint(ws: WebSocket):
                 await ws.send_text(json.dumps({
                     "type": "chat_deleted",
                     "chat_id": chat_id,
-                    "requestId": data.get("requestId")  # optional for frontend mapping
+                    "requestId": data.get("requestId")
                 }))
             continue
         # =================================================
@@ -174,48 +174,67 @@ async def ws_endpoint(ws: WebSocket):
         # 🔁 MODIFIED: Message handling
         # Previously: user_query came directly from socket
         # Now: comes from JSON payload
-       # =================================================
+        # =================================================
         # ✅ NEW: Auto-rename chat based on first user message
-        # If the chat has default title "New Chat", we ask the agent/LLM to create a short title
         # =================================================
         if msg_type == "message":
             chat_id = data["chat_id"]
             user_query = data["content"]
 
-            # Save user message BEFORE agent runs (existing)
+            # Save user message BEFORE agent runs
             memory.save_chat_message(chat_id, "user", user_query)
 
             # Check chat title and rename if default
-            current_title = memory.get_chat_title(chat_id)  # You need this method in PostgresMemory
+            current_title = memory.get_chat_title(chat_id)
             if current_title == "New Chat":
-                # Prepare a prompt for the LLM to generate a short 3-5 word title
-                title_prompt = (
-                    f"Create a short 3-5 word title for this chat based on the first user message:\n"
-                    f"{user_query}"
-                )
+                # Use first 30 chars of user message as title
+                new_title = user_query[:30] + ("..." if len(user_query) > 30 else "")
                 try:
-                    # Use agent to get title (assumes agent.run returns string)
-                    new_title = agent.run(title_prompt).strip()
                     if new_title:
                         memory.rename_chat(chat_id, new_title)
                         print(f"[DEBUG] Renamed chat {chat_id} to: {new_title}")
-                        # Notify frontend
                         await ws.send_text(json.dumps({
                             "type": "chat_renamed",
                             "chat_id": chat_id,
-                            "title": new_title
+                            "title": new_title,
+                            "requestId": data.get("requestId")
                         }))
                 except Exception as e:
                     print(f"[DEBUG] Failed to auto-rename chat: {e}")
         # =================================================
 
+        # =================================================
+        # 🔁 FIXED: Ensure user_query is defined for plain text messages
+        # PREVIOUSLY: user_query might be undefined for plain text
+        # NOW: user_query is always defined
+        # =================================================
+        if 'user_query' not in locals():
+            user_query = raw
+
         print(f"[DEBUG] Received user query: {user_query}")
 
         # =================================================
-        # UNCHANGED: setpath handling
+        # 🔁 IMPROVED: setpath handling with cross-platform support
+        # PREVIOUSLY: Only handled absolute paths directly
+        # NOW: Converts Windows paths to Linux format on Railway
         # =================================================
         if user_query.lower().startswith("setpath "):
             path = user_query[8:].strip()
+            
+            # 🔁 FIXED: Cross-platform path handling
+            # On Linux/Railway, convert Windows paths
+            if os.name != 'nt':  # Not Windows = Linux/Mac
+                if ':' in path or '\\' in path:
+                    # Extract just the folder name from Windows path
+                    folder_name = os.path.basename(path.replace('\\', '/'))
+                    path = f"/app/{folder_name}" if folder_name else "/app"
+                    print(f"[DEBUG] Converted Windows path to: {path}")
+            
+            # Ensure path exists or use /app
+            if not os.path.exists(path):
+                path = "/app"
+                print(f"[DEBUG] Path not found, using default: {path}")
+
             abs_path = os.path.abspath(path)
 
             if os.path.isdir(abs_path):
@@ -260,7 +279,7 @@ async def ws_endpoint(ws: WebSocket):
         # =================================================
         # ✅ NEW: Save assistant response AFTER streaming
         # =================================================
-        if msg_type == "message":
+        if msg_type == "message" and chat_id:
             memory.save_chat_message(chat_id, "assistant", agent_response)
             print(f"[DEBUG] Saved assistant response, length={len(agent_response)}")
 
