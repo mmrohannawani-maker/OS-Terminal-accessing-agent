@@ -40,6 +40,40 @@ agent, _ = build_terminal_agent()
 memory = PostgresMemory()
 # =====================================================
 
+# =====================================================
+# ✅ NEW: Get directory listing function for file browser
+# Returns list of files and folders in a directory
+# Previously: No file browser functionality
+# Now: Supports visual file navigation
+# =====================================================
+def get_directory_listing(path: str) -> list:
+    """Get formatted list of files and folders in directory"""
+    try:
+        if not os.path.exists(path):
+            return []
+        
+        items = []
+        for item in os.listdir(path):
+            item_path = os.path.join(path, item)
+            try:
+                is_dir = os.path.isdir(item_path)
+                items.append({
+                    "name": item,
+                    "type": "dir" if is_dir else "file",
+                    "size": os.path.getsize(item_path) if not is_dir else 0,
+                    "path": item_path
+                })
+            except (PermissionError, OSError):
+                # Skip files we can't access
+                continue
+        
+        # Sort: directories first, then files, alphabetically
+        return sorted(items, key=lambda x: (x['type'] != 'dir', x['name'].lower()))
+    except Exception as e:
+        print(f"[DEBUG] Error listing directory {path}: {e}")
+        return []
+# =====================================================
+
 @app.get("/")
 async def root():
     return {
@@ -101,7 +135,7 @@ async def ws_endpoint(ws: WebSocket):
         #   user_query = await ws.receive_text()
         #
         # NOW:
-        #   Supports JSON (chat_id, sidebar actions)
+        #   Supports JSON (chat_id, sidebar actions, file browser)
         #   AND plain-text fallback for terminal usage
         # =================================================
         chat_id = None
@@ -114,6 +148,38 @@ async def ws_endpoint(ws: WebSocket):
             data = None
             msg_type = None
             user_query = raw  # ✅ fallback (UNCHANGED behavior)
+        # =================================================
+
+        # =================================================
+        # ✅ NEW: File browser - list directory contents
+        # Frontend sends: {"type":"list_dir","path":"."}
+        # Previously: No file browser support
+        # Now: Returns structured directory listing
+        # =================================================
+        if msg_type == "list_dir":
+            target_path = data.get("path", ".")
+            
+            # Resolve path relative to current directory
+            if target_path == ".":
+                target_path = get_current_dir()
+            elif target_path == "..":
+                target_path = os.path.dirname(get_current_dir())
+            else:
+                target_path = os.path.join(get_current_dir(), target_path)
+            
+            # Ensure we don't escape sandbox
+            if not target_path.startswith(get_current_dir()):
+                target_path = get_current_dir()
+            
+            files = get_directory_listing(target_path)
+            
+            await ws.send_text(json.dumps({
+                "type": "directory_list",
+                "current_dir": target_path,
+                "files": files,
+                "requestId": data.get("requestId")
+            }))
+            continue
         # =================================================
 
         # =================================================
@@ -214,26 +280,20 @@ async def ws_endpoint(ws: WebSocket):
         print(f"[DEBUG] Received user query: {user_query}")
 
         # =================================================
-        # 🔁 IMPROVED: setpath handling with cross-platform support
-        # PREVIOUSLY: Only handled absolute paths directly
-        # NOW: Converts Windows paths to Linux format on Railway
+        # 🔁 MODIFIED: setpath handling with file browser integration
+        # PREVIOUSLY: Only set path
+        # NOW: Sets path AND sends directory listing to file browser
         # =================================================
         if user_query.lower().startswith("setpath "):
             path = user_query[8:].strip()
             
-            # 🔁 FIXED: Cross-platform path handling
-            # On Linux/Railway, convert Windows paths
-            if os.name != 'nt':  # Not Windows = Linux/Mac
-                if ':' in path or '\\' in path:
-                    # Extract just the folder name from Windows path
-                    folder_name = os.path.basename(path.replace('\\', '/'))
-                    path = f"/app/{folder_name}" if folder_name else "/app"
-                    print(f"[DEBUG] Converted Windows path to: {path}")
-            
-            # Ensure path exists or use /app
-            if not os.path.exists(path):
-                path = "/app"
-                print(f"[DEBUG] Path not found, using default: {path}")
+            # 🔁 MODIFIED: Removed automatic path conversion
+            # PREVIOUSLY: Converted Windows paths to /app on Linux
+            # NOW: Let user specify correct path for their platform
+            if os.name != 'nt':  # On Linux/Railway
+                if not os.path.exists(path):
+                    await ws.send_text(f"❌ Path does not exist on server: {path}\n")
+                    continue
 
             abs_path = os.path.abspath(path)
 
@@ -242,6 +302,15 @@ async def ws_endpoint(ws: WebSocket):
                 set_user_path(abs_path)
                 update_session_sandbox(agent, get_current_dir())
                 update_agent_context(agent, get_current_dir())
+                
+                # ✅ NEW: Send initial directory listing to file browser
+                files = get_directory_listing(abs_path)
+                await ws.send_text(json.dumps({
+                    "type": "directory_list",
+                    "current_dir": abs_path,
+                    "files": files
+                }))
+                
                 await ws.send_text(f"📁 Working directory set to:\n{get_current_dir()}\n")
                 print(f"[DEBUG] Set working directory to {get_current_dir()}")
             else:

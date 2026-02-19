@@ -130,5 +130,7 @@ export function useWebSocket(
     deleteChat,     // ✅ added
     renameChat,     // ✅ added
     isConnected,
+    socketRef  // ✅ Add this
+
   };
 }
