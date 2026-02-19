@@ -1,0 +1,24 @@
+langchain
+langchain-openai
+langchain-core
+pydantic
+python-dotenv
+
+langchain-huggingface
+
+
+
+transformers>=4.35.0
+torch>=2.0.0
+accelerate
+bitsandbytes  # optional, for quantization
+
+langgraph-checkpoint-postgres 
+psycopg_binary
+
+psycopg
+
+langchain-tavily
+uvicorn
+fastapi
+uvicorn[standard]
