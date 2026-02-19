@@ -180,7 +180,7 @@ Current location: {sandbox_root}
             system_prompt=system_prompt,
             middleware=middleware,
             debug=False,
-            response_format="content_and_artifact"
+            
         )
     except Exception as e:
         if "Unsupported schema type" in str(e):
