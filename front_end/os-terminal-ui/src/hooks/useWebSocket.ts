@@ -1,17 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 
-const WS_URL = "ws://localhost:8000/ws";
+// 🔁 REPLACED: Hardcoded WS_URL with dynamic URL from parameter
+// Previously: const WS_URL = "ws://localhost:8000/ws";
 
 type PendingResolver = (data: any) => void;
 
-export function useWebSocket(onMessage: (data: string) => void) {
+// 🔁 REPLACED: Now accepts URL parameter instead of hardcoded constant
+// Previously: export function useWebSocket(onMessage: (data: string) => void) {
+export function useWebSocket(
+  onMessage: (data: string) => void,
+  wsUrl?: string  // ✅ NEW: Optional URL parameter
+) {
   const socketRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   const pendingRef = useRef<Record<string, PendingResolver>>({});
 
   useEffect(() => {
-    const socket = new WebSocket(WS_URL);
+    // ✅ NEW: Determine WebSocket URL with priority:
+    // 1. Parameter passed to function
+    // 2. Vite environment variable (for production)
+    // 3. Localhost fallback (for development)
+    const url = wsUrl || 
+                import.meta.env.VITE_WS_URL || 
+                "ws://localhost:8000/ws";
+    
+    console.log(`🔌 Connecting to WebSocket: ${url}`); // ✅ NEW: Log connection URL
+    
+    const socket = new WebSocket(url);
     socketRef.current = socket;
 
     socket.onopen = () => setIsConnected(true);
@@ -51,7 +67,7 @@ export function useWebSocket(onMessage: (data: string) => void) {
     };
 
     return () => socket.close();
-  }, []);
+  }, [wsUrl]); // ✅ NEW: Added wsUrl to dependency array
 
   /* ✅ NEW: wait until socket is OPEN */
   const waitForOpen = async () => {

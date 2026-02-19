@@ -15,7 +15,19 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ✅ MODIFIED: Destructure new methods from useWebSocket
-  const { listChats, createChat, deleteChat, renameChat, sendMessage } = useWebSocket(() => {});
+  // 🔁 REPLACED: Previously had no parameters
+  // 🔁 FIXED: Now passing onMessage callback as first param and URL as second param
+  const { listChats, createChat, deleteChat, renameChat, sendMessage } = useWebSocket(
+    // 🔁 FIXED: First parameter is the onMessage callback function
+    (data) => {
+      console.log("📨 Message from server:", data);
+      // You can add state updates here if needed
+    },
+    // 🔁 FIXED: Second parameter is the WebSocket URL
+    import.meta.env.PROD 
+      ? 'wss://os-terminal-accessing-agent-production.up.railway.app/ws'
+      : 'ws://localhost:8000/ws'
+  );
 
   // ✅ NEW: Handle sending user message AND auto-rename chat based on first user query
   const handleUserMessage = async (content: string, chatId: string) => {
