@@ -26,6 +26,9 @@ export default function SimpleBrowserMode() {
     const wsUrl = window.location.protocol === 'https:'
   ? `wss://${window.location.host}/ws-browser`  // ← Must be /ws-browser
   : `ws://${window.location.host}/ws-browser`;
+
+  console.log('🔍 Attempting to connect to:', wsUrl);
+
     
     console.log("🔌 Connecting to WebSocket:", wsUrl);
     
