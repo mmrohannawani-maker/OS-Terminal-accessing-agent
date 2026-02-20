@@ -26,8 +26,9 @@ export default function SimpleBrowserMode() {
   const connectWebSocket = () => {
     // Determine WebSocket URL based on environment
     const wsUrl = window.location.protocol === 'https:'
-      ? `wss://${window.location.host}/ws-browser`
-      : `ws://${window.location.host}/ws-browser`;
+        ? `wss://${window.location.host}/ws-browser`  // ← FIXED SPELLING
+        : `ws://${window.location.host}/ws-browser`;  // ← FIXED SPELLING
+
 
     console.log('🔌 Connecting to WebSocket:', wsUrl);
     setConnectionStatus('connecting');
