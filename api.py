@@ -145,9 +145,18 @@ async def root():
 # ✅ NEW: Browser Mode WebSocket Endpoint
 # Connects to the research agent for simple queries
 # =====================================================
-@app.websocket("/ws-browser")
-async def browser_websocket(websocket: WebSocket):
-    await handle_research_websocket(websocket)
+try:
+    print("🔍 Attempting to import from docsloadingagent...")
+    from docsloadingagent import handle_research_websocket
+    print("✅ Successfully imported docsloadingagent")
+    
+    @app.websocket("/ws-browser")
+    async def browser_websocket(websocket: WebSocket):
+        await handle_research_websocket(websocket)
+    print("✅ /ws-browser endpoint registered")
+except Exception as e:
+    print(f"❌ FAILED TO IMPORT BROWSER AGENT: {e}")
+    print("Browser mode will be disabled")
 # =====================================================
 
 @app.websocket("/ws")
