@@ -39,3 +39,6 @@ asyncpg
 python-dotenv
 pydantic
 httpx
+
+langchain-community 
+beautifulsoup4

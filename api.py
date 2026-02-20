@@ -20,6 +20,10 @@ from fastapi import File, UploadFile, HTTPException
 import shutil
 from typing import List
 # =====================================================
+# ✅ NEW: Import browser agent for mode switching
+# =====================================================
+from docsloadingagent import handle_research_websocket
+# =====================================================
 
 app = FastAPI()
 
@@ -132,10 +136,19 @@ async def root():
         "status": "online",
         "message": "Terminal Agent API is running",
         "websocket": "/ws",
+        "websocket_browser": "/ws-browser",
         "upload": "/api/upload",
-        "usage": "Connect to wss://your-app.railway.app/ws for WebSocket"
+        "usage": "Connect to wss://your-app.railway.app/ws for Terminal Mode or /ws-browser for Browser Mode"
     }
 
+# =====================================================
+# ✅ NEW: Browser Mode WebSocket Endpoint
+# Connects to the research agent for simple queries
+# =====================================================
+@app.websocket("/ws-browser")
+async def browser_websocket(websocket: WebSocket):
+    await handle_research_websocket(websocket)
+# =====================================================
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):

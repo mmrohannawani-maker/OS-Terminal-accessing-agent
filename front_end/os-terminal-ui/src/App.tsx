@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import Terminal from "./components/Terminal";
 import Sidebar from "./components/Sidebar";
+import SimpleBrowserMode from "./components/SimpleBrowserMode";
+import ModeSelector from "./components/ModeSelector";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 type Chat = {
@@ -8,7 +10,23 @@ type Chat = {
   title: string;
 };
 
+// =====================================================
+// ✅ NEW: Mode type for switching between terminal and browser
+// Previously: No mode switching
+// Now: Supports two modes
+// =====================================================
+type Mode = "terminal" | "browser";
+// =====================================================
+
 export default function App() {
+  // =====================================================
+  // ✅ NEW: Mode state
+  // Previously: Always terminal mode
+  // Now: Can switch between terminal and browser
+  // =====================================================
+  const [mode, setMode] = useState<Mode>("terminal");
+  // =====================================================
+
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
@@ -47,6 +65,13 @@ export default function App() {
 
   /* ✅ FIXED: always guarantee an active chat */
   useEffect(() => {
+    // =================================================
+    // 🔁 MODIFIED: Only initialize chats in terminal mode
+    // Previously: Always initialized chats
+    // Now: Skips chat initialization in browser mode
+    // =================================================
+    if (mode !== "terminal") return;
+    
     const init = async () => {
       const loadedChats = await listChats();
 
@@ -61,7 +86,7 @@ export default function App() {
     };
 
     init();
-  }, []);
+  }, [mode]); // 🔁 MODIFIED: Added mode as dependency
 
   const handleCreateChat = async () => {
     const newChat = await createChat();
@@ -72,16 +97,37 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-900 text-zinc-100 flex relative">
-      {/* ☰ Sidebar Toggle */}
-      <button
-        className="absolute top-4 left-4 z-50 text-white text-2xl"
-        onClick={() => setSidebarOpen((v) => !v)}
-      >
-        ☰
-      </button>
+      {/* ================================================= */}
+      {/* ✅ NEW: Mode Selector - Always visible at top */}
+      {/* Previously: No mode selector */}
+      {/* Now: Allows switching between terminal and browser modes */}
+      {/* ================================================= */}
+      <div className="absolute top-4 right-4 z-50">
+        <ModeSelector currentMode={mode} onModeChange={setMode} />
+      </div>
+      {/* ================================================= */}
 
-      {/* Sidebar */}
-      {sidebarOpen && (
+      {/* ================================================= */}
+      {/* 🔁 MODIFIED: Sidebar toggle - only visible in terminal mode */}
+      {/* Previously: Always visible */}
+      {/* Now: Hidden in browser mode */}
+      {/* ================================================= */}
+      {mode === "terminal" && (
+        <button
+          className="absolute top-4 left-4 z-50 text-white text-2xl"
+          onClick={() => setSidebarOpen((v) => !v)}
+        >
+          ☰
+        </button>
+      )}
+      {/* ================================================= */}
+
+      {/* ================================================= */}
+      {/* 🔁 MODIFIED: Sidebar - only visible in terminal mode */}
+      {/* Previously: Always visible when open */}
+      {/* Now: Hidden in browser mode */}
+      {/* ================================================= */}
+      {mode === "terminal" && sidebarOpen && (
         <Sidebar
           chats={chats}
           activeChatId={activeChatId}
@@ -108,20 +154,30 @@ export default function App() {
           }}
         />
       )}
+      {/* ================================================= */}
 
-      {/* Terminal ALWAYS visible */}
+      {/* ================================================= */}
+      {/* 🔁 MODIFIED: Main content - conditionally render based on mode */}
+      {/* Previously: Always rendered Terminal */}
+      {/* Now: Renders Terminal OR SimpleBrowserMode based on mode */}
+      {/* ================================================= */}
       <div className="flex-1 flex items-center justify-center">
-        <Terminal
-          chatId={activeChatId}
-          onEnsureChat={async () => {
-            const newChat = await createChat();
-            setChats((prev) => [newChat, ...prev]);
-            setActiveChatId(newChat.id);
-            return newChat.id;
-          }}
-          onSend={async (content: string) => handleUserMessage(content, activeChatId!)}
-        />
+        {mode === "terminal" ? (
+          <Terminal
+            chatId={activeChatId}
+            onEnsureChat={async () => {
+              const newChat = await createChat();
+              setChats((prev) => [newChat, ...prev]);
+              setActiveChatId(newChat.id);
+              return newChat.id;
+            }}
+            onSend={async (content: string) => handleUserMessage(content, activeChatId!)}
+          />
+        ) : (
+          <SimpleBrowserMode />
+        )}
       </div>
+      {/* ================================================= */}
     </div>
   )
 }
