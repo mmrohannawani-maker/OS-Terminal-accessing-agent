@@ -57,8 +57,9 @@ export default function Terminal({
   // Previously: Only cloud upload method
   // Now: Can use local server for direct file access
   // =====================================================
-  const [useLocalServer, setUseLocalServer] = useState<boolean>(false);
-  const localServerUrl = 'http://localhost:3031'; // Changed: no setter
+  // 🔁 AGGRESSIVE FIX: Set to true by default, but will be overridden if detection fails
+  const [useLocalServer, setUseLocalServer] = useState<boolean>(true);
+  const localServerUrl = 'http://localhost:3031';
   const [localRoot, setLocalRoot] = useState<string>('');
   // =====================================================
 
@@ -88,28 +89,61 @@ export default function Terminal({
   };
 
   // =====================================================
-  // ✅ NEW: Check for local server on startup
-  // Previously: No local server detection
-  // Now: Auto-detects if user has local server running
+  // 🔁 MODIFIED: Aggressive local server check
+  // Previously: Passive detection
+  // Now: Tries multiple times and falls back gracefully
   // =====================================================
   useEffect(() => {
     const checkLocalServer = async () => {
-      try {
-        const response = await fetch(`${localServerUrl}/api/status`);
-        if (response.ok) {
-          await response.json();
-          setUseLocalServer(true);
-          //setLocalRoot(data.currentRoot);
-          console.log('✅ Local server detected at', localServerUrl);
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts) {
+        try {
+          const response = await fetch(`${localServerUrl}/api/status`, {
+            signal: AbortSignal.timeout(2000) // 2 second timeout
+          });
           
-          setMessages((prev) => [
-            ...prev,
-            { role: "agent", content: "✅ Connected to local server - files accessed directly from your computer!" }
-          ]);
+          if (response.ok) {
+            await response.json();
+            setUseLocalServer(true);
+            console.log('✅ Local server detected at', localServerUrl);
+            
+            setMessages((prev) => [
+              ...prev,
+              { role: "agent", content: "✅ Connected to local server - files accessed directly from your computer! Click 'Select Folder' to choose a directory." }
+            ]);
+            
+            // Try to get initial drives
+            try {
+              const drivesResponse = await fetch(`${localServerUrl}/api/drives`);
+              if (drivesResponse.ok) {
+                const drivesData = await drivesResponse.json();
+                console.log('📁 Available drives:', drivesData.drives);
+              }
+            } catch (drivesErr) {
+              console.log('Could not fetch drives, but continuing');
+            }
+            
+            return; // Success, exit function
+          }
+        } catch (err) {
+          console.log(`Local server check attempt ${attempts + 1} failed`);
         }
-      } catch (err) {
-        console.log('Local server not available, using cloud upload method');
+        
+        attempts++;
+        if (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between attempts
+        }
       }
+      
+      // If we get here, all attempts failed
+      console.log('Local server not available after multiple attempts');
+      setUseLocalServer(false);
+      setMessages((prev) => [
+        ...prev,
+        { role: "agent", content: "⚠️ Local server not detected. Using cloud mode with file uploads." }
+      ]);
     };
     
     checkLocalServer();
@@ -125,16 +159,27 @@ export default function Terminal({
       // Use local server API
       try {
         const response = await fetch(`${localServerUrl}/api/list?path=${encodeURIComponent(path)}`);
-        const data = await response.json();
-        setCurrentDir(data.currentDir);
-        setFileList(data.items.map((item: any) => ({
-          name: item.name,
-          type: item.type,
-          size: item.size,
-          path: item.path
-        })));
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentDir(data.currentDir);
+          setFileList(data.items.map((item: any) => ({
+            name: item.name,
+            type: item.type,
+            size: item.size,
+            path: item.path
+          })));
+        } else {
+          console.error('Local server returned error:', response.status);
+        }
       } catch (err) {
         console.error('Local server error:', err);
+        // If local server fails, try WebSocket as fallback
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({
+            type: "list_dir",
+            path: path
+          }));
+        }
       }
     } else {
       // Fall back to WebSocket (cloud)
@@ -154,14 +199,18 @@ export default function Terminal({
   // =====================================================
   const getDrives = async () => {
     if (!useLocalServer) {
-      alert('Local server not available. Please download and run the local server app first.');
       return [];
     }
     
     try {
-      const response = await fetch(`${localServerUrl}/api/drives`);
-      const data = await response.json();
-      return data.drives;
+      const response = await fetch(`${localServerUrl}/api/drives`, {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data.drives || [];
+      }
+      return [];
     } catch (err) {
       console.error('Failed to get drives:', err);
       return [];
@@ -174,13 +223,17 @@ export default function Terminal({
   // User selects a folder, local server uses it as root
   // =====================================================
   const updateLocalRoot = async (path: string) => {
-    if (!useLocalServer) return false;
+    if (!useLocalServer) {
+      alert('Local server not available. Please check if it\'s running.');
+      return false;
+    }
     
     try {
       const response = await fetch(`${localServerUrl}/api/set-root`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path })
+        body: JSON.stringify({ path }),
+        signal: AbortSignal.timeout(5000)
       });
       
       const data = await response.json();
@@ -199,10 +252,13 @@ export default function Terminal({
         ]);
         
         return true;
+      } else {
+        alert('Failed to set folder: ' + (data.error || 'Unknown error'));
+        return false;
       }
-      return false;
     } catch (err) {
       console.error('Failed to set root:', err);
+      alert('Error connecting to local server. Make sure it\'s running on port 3031.');
       return false;
     }
   };
@@ -259,14 +315,14 @@ export default function Terminal({
     
     if (useLocalServer) {
       // With local server, we can copy files directly
-      alert('Local server detected! You can work with files directly without uploading.\nFiles will be copied to current directory.');
-      
-      // TODO: Implement direct copy to local server folder
-      // For now, just acknowledge
-      setMessages((prev) => [
-        ...prev,
-        { role: "agent", content: `📁 Local server mode: Files can be accessed directly. Use "mkdir" and "create file" commands.` }
-      ]);
+      const targetPath = prompt('Enter destination path (relative to current directory):', '.');
+      if (targetPath) {
+        // TODO: Implement direct copy to local server folder
+        setMessages((prev) => [
+          ...prev,
+          { role: "agent", content: `📋 File copy not yet implemented. Use 'create file' command instead.` }
+        ]);
+      }
       return;
     }
     
@@ -320,20 +376,55 @@ export default function Terminal({
   // Now: Actually lets user select folder with local server
   // =====================================================
   const handleFolderPicker = async () => {
-    if (useLocalServer) {
-      // Local server mode - actual folder selection
+    try {
+      // Get available drives (if local server is running)
+      let drives: string[] = [];
+      let localServerAvailable = false;
+      
       try {
-        const drives = await getDrives();
-        const path = prompt(`Enter full path to folder (e.g., ${drives[0] || 'C:\\Users\\yourname'})`);
+        const response = await fetch(`${localServerUrl}/api/status`, {
+          signal: AbortSignal.timeout(2000)
+        });
+        localServerAvailable = response.ok;
+        
+        if (localServerAvailable) {
+          const drivesData = await getDrives();
+          drives = drivesData;
+        }
+      } catch (err) {
+        console.log('Local server not available');
+      }
+      
+      if (localServerAvailable) {
+        // Local server mode - actual folder selection
+        const defaultPath = drives.length > 0 ? drives[0] : 'C:\\';
+        const path = prompt('Enter full path to folder:', defaultPath);
+        
         if (path) {
           await updateLocalRoot(path);
         }
-      } catch (err) {
-        console.error('Folder picker error:', err);
+      } else {
+        // Cloud mode - use upload or manual path
+        const choice = prompt(
+          'No local server detected. Choose mode:\n' +
+          '1: Upload files\n' +
+          '2: Enter manual path (will use /app on server)'
+        );
+        
+        if (choice === '1') {
+          fileInputRef.current?.click();
+        } else if (choice === '2') {
+          const path = prompt('Enter path (will be created on server):', '/app/myfolder');
+          if (path) {
+            // Send mkdir command to agent
+            sendMessage(`mkdir ${path}`, chatId!);
+            setTimeout(() => requestDirectoryListing("."), 1000);
+          }
+        }
       }
-    } else {
-      // Cloud mode - use upload
-      alert('In cloud mode, please use "Upload Files" button to add files.');
+    } catch (err) {
+      console.error('Folder picker error:', err);
+      alert('Error in folder picker. Check console for details.');
     }
   };
   // =====================================================
@@ -412,7 +503,7 @@ export default function Terminal({
       console.log("Connected. Use file browser to navigate, then type commands.");
       
       const welcomeMessage = useLocalServer 
-        ? "✅ Connected to local server - files accessed directly from your computer! Use file browser to navigate."
+        ? "✅ Connected to local server - files accessed directly from your computer! Click 'Select Folder' to choose a directory."
         : "✅ Connected. Use file browser to navigate, then type commands like 'create file', 'mkdir', etc.";
       
       setMessages((prev) => [
@@ -493,13 +584,7 @@ export default function Terminal({
         
         <button
           onClick={handleFolderPicker}
-          // className={`text-xs px-3 py-1 rounded ${
-          //   useLocalServer 
-          //     ? "bg-purple-600 hover:bg-purple-700" 
-          //     : "bg-gray-600 cursor-not-allowed opacity-50"
-          // }`}
-          // disabled={!useLocalServer}
-          // title={!useLocalServer ? "Download local server app first" : "Select folder on your computer"}
+          className="text-xs bg-purple-600 px-3 py-1 rounded hover:bg-purple-700"
         >
           📁 Select Folder
         </button>
