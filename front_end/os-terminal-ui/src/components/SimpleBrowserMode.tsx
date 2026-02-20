@@ -23,9 +23,9 @@ export default function SimpleBrowserMode() {
   // Connect to WebSocket on component mount
   useEffect(() => {
     // Determine WebSocket URL based on environment
-    const wsUrl = import.meta.env.PROD
-      ? 'wss://vibrant-patience-production-61eb.up.railway.app/ws-browser'  // ✅ PRODUCTION
-      : 'ws://localhost:8000/ws-browser';  // ✅ DEVELOPMENT
+    const wsUrl = window.location.protocol === 'https:'
+  ? `wss://${window.location.host}/ws-browser`  // ← Must be /ws-browser
+  : `ws://${window.location.host}/ws-browser`;
     
     console.log("🔌 Connecting to WebSocket:", wsUrl);
     
