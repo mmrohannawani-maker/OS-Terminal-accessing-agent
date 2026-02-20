@@ -11,39 +11,61 @@ export default function SimpleBrowserMode() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // =====================================================
-  // ✅ NEW: WebSocket connection for research agent
-  // Previously: Used setTimeout echo responses
-  // Now: Connects to real backend agent
+  // 🔁 FIXED: WebSocket connection with auto-reconnect
+  // Previously: No reconnection logic
+  // Now: Automatically reconnects on failure
   // =====================================================
   const wsRef = useRef<WebSocket | null>(null);
+  // 🔁 FIXED: Using null instead of undefined for timeout ref
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Connect to WebSocket on component mount
-  useEffect(() => {
+  const connectWebSocket = () => {
     // Determine WebSocket URL based on environment
     const wsUrl = window.location.protocol === 'https:'
-  ? `wss://${window.location.host}/ws-browser`  // ← Must be /ws-browser
-  : `ws://${window.location.host}/ws-browser`;
+      ? `wss://${window.location.host}/ws-browser`
+      : `ws://${window.location.host}/ws-browser`;
 
-  console.log('🔍 Attempting to connect to:', wsUrl);
-
+    console.log('🔌 Connecting to WebSocket:', wsUrl);
+    setConnectionStatus('connecting');
     
-    console.log("🔌 Connecting to WebSocket:", wsUrl);
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
     
-    wsRef.current = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl);
     
-    wsRef.current.onopen = () => {
+    // Set timeout for connection
+    const connectionTimeout = setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        console.log('⏱️ Connection timeout');
+        ws.close();
+        setConnectionStatus('disconnected');
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: "⚠️ Connection timeout. Retrying..." 
+        }]);
+        // Try to reconnect after 3 seconds
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+      }
+    }, 10000);
+    
+    ws.onopen = () => {
+      clearTimeout(connectionTimeout);
       console.log("✅ WebSocket connected");
+      setConnectionStatus('connected');
       setMessages(prev => [...prev, { 
         role: "assistant", 
         content: "✅ Connected to research agent. I can search the web for information!" 
       }]);
     };
     
-    wsRef.current.onmessage = (event) => {
-      console.log("📨 Received:", event.data);
+    ws.onmessage = (event) => {
+      console.log("📨 Received:", event.data.substring(0, 50) + "...");
       setMessages(prev => [...prev, { 
         role: "assistant", 
         content: event.data 
@@ -51,22 +73,45 @@ export default function SimpleBrowserMode() {
       setIsLoading(false);
     };
     
-    wsRef.current.onerror = (error) => {
+    ws.onerror = (error) => {
       console.error("❌ WebSocket error:", error);
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: "❌ Connection error. Please refresh the page." 
-      }]);
-      setIsLoading(false);
+      setConnectionStatus('disconnected');
+      // Don't show error message immediately - let onclose handle reconnection
     };
     
-    wsRef.current.onclose = () => {
-      console.log("🔌 WebSocket disconnected");
+    ws.onclose = (event) => {
+      clearTimeout(connectionTimeout);
+      console.log("🔌 WebSocket disconnected:", event.code, event.reason);
+      setConnectionStatus('disconnected');
+      
+      // Try to reconnect if not closed normally (1000 = normal closure)
+      if (event.code !== 1000) {
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: "⚠️ Connection lost. Reconnecting..." 
+        }]);
+        // Attempt to reconnect after 3 seconds
+        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+      }
     };
+    
+    wsRef.current = ws;
+  };
+
+  // Connect to WebSocket on component mount
+  useEffect(() => {
+    connectWebSocket();
     
     // Cleanup on unmount
     return () => {
-      wsRef.current?.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.close(1000, "Component unmounting");
+        wsRef.current = null;
+      }
     };
   }, []);
 
@@ -77,11 +122,9 @@ export default function SimpleBrowserMode() {
 
   // =====================================================
   // 🔁 MODIFIED: Handle send with WebSocket
-  // Previously: Echo response with setTimeout
-  // Now: Sends message to real backend agent
   // =====================================================
   const handleSend = () => {
-    if (!input.trim() || !wsRef.current || isLoading) return;
+    if (!input.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || isLoading) return;
     
     // Add user message
     setMessages(prev => [...prev, { role: "user", content: input }]);
@@ -92,6 +135,17 @@ export default function SimpleBrowserMode() {
     setIsLoading(true);
   };
 
+  // =====================================================
+  // ✅ NEW: Manual reconnect button
+  // =====================================================
+  const handleReconnect = () => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    connectWebSocket();
+  };
+
   return (
     <div className="max-w-4xl mx-auto bg-black rounded-lg shadow-lg p-6">
       {/* Header */}
@@ -99,16 +153,24 @@ export default function SimpleBrowserMode() {
         <span className="text-3xl">🌐</span>
         <h2 className="text-2xl font-bold text-blue-400">Browser Mode</h2>
         {/* ================================================= */}
-        {/* ✅ NEW: Connection status indicator */}
+        {/* 🔁 FIXED: Connection status indicator with more details */}
         {/* ================================================= */}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <span className={`text-xs px-2 py-1 rounded ${
-            wsRef.current?.readyState === WebSocket.OPEN 
-              ? 'bg-green-600' 
-              : 'bg-red-600'
+            connectionStatus === 'connected' ? 'bg-green-600' :
+            connectionStatus === 'connecting' ? 'bg-yellow-600' : 'bg-red-600'
           }`}>
-            {wsRef.current?.readyState === WebSocket.OPEN ? 'Connected' : 'Disconnected'}
+            {connectionStatus === 'connected' ? 'Connected' :
+             connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
           </span>
+          {connectionStatus === 'disconnected' && (
+            <button
+              onClick={handleReconnect}
+              className="text-xs bg-blue-600 px-2 py-1 rounded hover:bg-blue-700"
+            >
+              Reconnect
+            </button>
+          )}
         </div>
       </div>
 
@@ -126,9 +188,6 @@ export default function SimpleBrowserMode() {
                   : "bg-zinc-800 text-zinc-100 rounded-bl-none"
               }`}
             >
-              {/* ================================================= */}
-              {/* ✅ IMPROVED: Better message formatting with line breaks */}
-              {/* ================================================= */}
               {msg.content.split('\n').map((line, i) => (
                 <span key={i}>
                   {line}
@@ -139,9 +198,7 @@ export default function SimpleBrowserMode() {
           </div>
         ))}
         
-        {/* ================================================= */}
-        {/* ✅ NEW: Loading indicator */}
-        {/* ================================================= */}
+        {/* Loading indicator */}
         {isLoading && (
           <div className="text-center text-blue-400 py-2">
             <span className="animate-pulse">●</span>
@@ -161,12 +218,12 @@ export default function SimpleBrowserMode() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder="Type your message here..."
-          disabled={!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || isLoading}
+          disabled={connectionStatus !== 'connected' || isLoading}
           className="flex-1 bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-400 disabled:opacity-50"
         />
         <button
           onClick={handleSend}
-          disabled={!input.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || isLoading}
+          disabled={!input.trim() || connectionStatus !== 'connected' || isLoading}
           className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Send

@@ -6,26 +6,33 @@ from langchain_core.messages import SystemMessage
 from terminal_tools import set_user_path
 
 # =====================================================
-# ✅ ADDED IMPORTS (NEW)
-# Previously: WebSocket accepted plain text only
-# Now: JSON protocol for sidebar + chat persistence
+# ✅ ADDED IMPORTS
 # =====================================================
 import json
 import uuid
 from memory_postgres import PostgresMemory
-# =====================================================
-# ✅ NEW: Added imports for file upload
-# =====================================================
 from fastapi import File, UploadFile, HTTPException
 import shutil
 from typing import List
 # =====================================================
-# ✅ NEW: Import browser agent for mode switching
+# ✅ NEW: CORS middleware
 # =====================================================
-from docsloadingagent import handle_research_websocket
+from fastapi.middleware.cors import CORSMiddleware
 # =====================================================
 
 app = FastAPI()
+
+# =====================================================
+# ✅ NEW: Add CORS middleware
+# =====================================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# =====================================================
 
 # =====================================================
 # UNCHANGED: Working directory handling
@@ -44,17 +51,13 @@ def set_current_dir(path):
 agent, _ = build_terminal_agent()
 
 # =====================================================
-# ✅ ADDED: Persistent DB-backed memory (NEW)
-# Previously: No session/chat persistence
+# ✅ ADDED: Persistent DB-backed memory
 # =====================================================
 memory = PostgresMemory()
 # =====================================================
 
 # =====================================================
 # ✅ NEW: Get directory listing function for file browser
-# Returns list of files and folders in a directory
-# Previously: No file browser functionality
-# Now: Supports visual file navigation
 # =====================================================
 def get_directory_listing(path: str) -> list:
     """Get formatted list of files and folders in directory"""
@@ -74,10 +77,8 @@ def get_directory_listing(path: str) -> list:
                     "path": item_path
                 })
             except (PermissionError, OSError):
-                # Skip files we can't access
                 continue
         
-        # Sort: directories first, then files, alphabetically
         return sorted(items, key=lambda x: (x['type'] != 'dir', x['name'].lower()))
     except Exception as e:
         print(f"[DEBUG] Error listing directory {path}: {e}")
@@ -86,16 +87,13 @@ def get_directory_listing(path: str) -> list:
 
 # =====================================================
 # ✅ NEW: File upload endpoint
-# Allows users to upload files from their computer
 # =====================================================
 @app.post("/api/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
     """Upload files to the current working directory"""
     try:
-        # Get current directory or use default
         upload_dir = get_current_dir()
         if not upload_dir:
-            # If no directory set, create one
             upload_dir = "/app/uploads" if os.name != 'nt' else "./uploads"
             os.makedirs(upload_dir, exist_ok=True)
             set_current_dir(upload_dir)
@@ -104,11 +102,9 @@ async def upload_files(files: List[UploadFile] = File(...)):
         
         saved_files = []
         for file in files:
-            # Security: Sanitize filename
             safe_filename = os.path.basename(file.filename)
             file_path = os.path.join(upload_dir, safe_filename)
             
-            # Save file
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             
@@ -141,22 +137,37 @@ async def root():
         "usage": "Connect to wss://your-app.railway.app/ws for Terminal Mode or /ws-browser for Browser Mode"
     }
 
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "timestamp": str(asyncio.get_event_loop().time())}
+
 # =====================================================
-# ✅ NEW: Browser Mode WebSocket Endpoint
-# Connects to the research agent for simple queries
+# ✅ FIXED: Browser Mode WebSocket Endpoint with better error handling
 # =====================================================
 try:
+    print("="*60)
     print("🔍 Attempting to import from docsloadingagent...")
     from docsloadingagent import handle_research_websocket
     print("✅ Successfully imported docsloadingagent")
     
     @app.websocket("/ws-browser")
     async def browser_websocket(websocket: WebSocket):
-        await handle_research_websocket(websocket)
+        print("="*60)
+        print("🔴 BROWSER MODE CONNECTION ATTEMPT")
+        print(f"Client: {websocket.client}")
+        print("="*60)
+        try:
+            await handle_research_websocket(websocket)
+        except Exception as e:
+            print(f"❌ Error in browser websocket: {e}")
+            import traceback
+            traceback.print_exc()
     print("✅ /ws-browser endpoint registered")
 except Exception as e:
     print(f"❌ FAILED TO IMPORT BROWSER AGENT: {e}")
     print("Browser mode will be disabled")
+    import traceback
+    traceback.print_exc()
 # =====================================================
 
 @app.websocket("/ws")
@@ -164,11 +175,6 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     print("[DEBUG] WebSocket connected")
     
-    # =================================================
-    # 🔁 REMOVED: setpath requirement message
-    # Previously: "Use: setpath <absolute_path>"
-    # Now: Just welcome message
-    # =================================================
     await ws.send_text("📌 Session started. Click folders to navigate, then type commands.\n")
 
     # =================================================
@@ -209,18 +215,12 @@ async def ws_endpoint(ws: WebSocket):
     # MAIN LOOP
     # =================================================
     while True:
-
-        # =================================================
-        # 🔁 REPLACED
-        # PREVIOUSLY:
-        #   user_query = await ws.receive_text()
-        #
-        # NOW:
-        #   Supports JSON (chat_id, sidebar actions, file browser)
-        #   AND plain-text fallback for terminal usage
-        # =================================================
         chat_id = None
-        raw = await ws.receive_text()
+        try:
+            raw = await ws.receive_text()
+        except Exception as e:
+            print(f"[DEBUG] WebSocket receive error: {e}")
+            break
 
         try:
             data = json.loads(raw)
@@ -228,14 +228,10 @@ async def ws_endpoint(ws: WebSocket):
         except Exception:
             data = None
             msg_type = None
-            user_query = raw  # ✅ fallback (UNCHANGED behavior)
-        # =================================================
+            user_query = raw
 
         # =================================================
         # ✅ NEW: File browser - list directory contents
-        # Frontend sends: {"type":"list_dir","path":"."}
-        # Previously: No file browser support
-        # Now: Returns structured directory listing
         # =================================================
         if msg_type == "list_dir":
             current = get_current_dir()
@@ -249,7 +245,6 @@ async def ws_endpoint(ws: WebSocket):
                 
             target_path = data.get("path", ".")
             
-            # Resolve path relative to current directory
             if target_path == ".":
                 target_path = current
             elif target_path == "..":
@@ -257,7 +252,6 @@ async def ws_endpoint(ws: WebSocket):
             else:
                 target_path = os.path.join(current, target_path)
             
-            # Ensure we don't escape sandbox
             if not target_path.startswith(current):
                 target_path = current
             
@@ -270,7 +264,6 @@ async def ws_endpoint(ws: WebSocket):
                 "requestId": data.get("requestId")
             }))
             continue
-        # =================================================
 
         # =================================================
         # ✅ NEW: Sidebar – list chats
@@ -287,7 +280,6 @@ async def ws_endpoint(ws: WebSocket):
                 "requestId": data.get("requestId")
             }))
             continue
-        # =================================================
 
         # =================================================
         # ✅ NEW: Create new chat
@@ -307,43 +299,33 @@ async def ws_endpoint(ws: WebSocket):
                 "requestId": data.get("requestId")
             }))
             continue
-        # =================================================
+
         # =================================================
         # ✅ NEW: Delete a chat handler
-        # Allows frontend to delete a chat by sending {"type":"delete_chat","chat_id":<id>}
         # =================================================
         if msg_type == "delete_chat":
             chat_id = data.get("chat_id")
             if chat_id:
                 memory.delete_chat(chat_id)
                 print(f"[DEBUG] Deleted chat: {chat_id}")
-                # Send confirmation back to frontend
                 await ws.send_text(json.dumps({
                     "type": "chat_deleted",
                     "chat_id": chat_id,
                     "requestId": data.get("requestId")
                 }))
             continue
-        # =================================================
 
         # =================================================
         # 🔁 MODIFIED: Message handling
-        # Previously: user_query came directly from socket
-        # Now: comes from JSON payload
-        # =================================================
-        # ✅ NEW: Auto-rename chat based on first user message
         # =================================================
         if msg_type == "message":
             chat_id = data["chat_id"]
             user_query = data["content"]
 
-            # Save user message BEFORE agent runs
             memory.save_chat_message(chat_id, "user", user_query)
 
-            # Check chat title and rename if default
             current_title = memory.get_chat_title(chat_id)
             if current_title == "New Chat":
-                # Use first 30 chars of user message as title
                 new_title = user_query[:30] + ("..." if len(user_query) > 30 else "")
                 try:
                     if new_title:
@@ -357,46 +339,15 @@ async def ws_endpoint(ws: WebSocket):
                         }))
                 except Exception as e:
                     print(f"[DEBUG] Failed to auto-rename chat: {e}")
-        # =================================================
 
-        # =================================================
-        # 🔁 FIXED: Ensure user_query is defined for plain text messages
-        # PREVIOUSLY: user_query might be undefined for plain text
-        # NOW: user_query is always defined
-        # =================================================
         if 'user_query' not in locals():
             user_query = raw
 
         print(f"[DEBUG] Received user query: {user_query}")
 
-        # =================================================
-        # 🔁 REMOVED: setpath handling - no longer needed
-        # Users navigate via file browser only
-        # =================================================
-        # The entire setpath block has been removed
-        
-        # =================================================
-        # 🔁 REMOVED: Path requirement check
-        # No longer forcing users to set path first
-        # =================================================
-        # if get_current_dir() is None:
-        #     await ws.send_text("⚠️ Please set working directory first using:\nsetpath <path>\n")
-        #     continue
-
-        # =================================================
-        # 🔁 MODIFIED STREAMING LOOP
-        #
-        # PREVIOUSLY:
-        #   streamed output only
-        #
-        # NOW:
-        #   stream + collect + persist assistant reply
-        # =================================================
-        
         agent_response = ""
         current_dir = get_current_dir()
         
-        # If no directory set, use a default for commands
         if not current_dir:
             await ws.send_text("⚠️ No directory selected. Please select a folder first using the file browser.\n")
             continue
@@ -412,14 +363,9 @@ async def ws_endpoint(ws: WebSocket):
             print(f"[DEBUG] Streaming chunk: {chunk}")
             await asyncio.sleep(0)
 
-        # =================================================
-        # ✅ NEW: Save assistant response AFTER streaming
-        # =================================================
         if msg_type == "message" and chat_id:
             memory.save_chat_message(chat_id, "assistant", agent_response)
             print(f"[DEBUG] Saved assistant response, length={len(agent_response)}")
-
-        # =================================================
 
 # At the VERY BOTTOM of api.py, add this:
 if __name__ == "__main__":
