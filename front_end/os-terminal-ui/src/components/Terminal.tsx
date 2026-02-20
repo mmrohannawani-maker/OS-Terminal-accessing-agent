@@ -53,13 +53,12 @@ export default function Terminal({
   // =====================================================
 
   // =====================================================
-  // ✅ NEW: Local server integration
-  // Previously: Only cloud upload method
-  // Now: Can use local server for direct file access
+  // 🔁 FIXED: Local server integration - disabled in production
+  // Previously: Tried to connect to localhost in production
+  // Now: Local server only available in development
   // =====================================================
-  // 🔁 AGGRESSIVE FIX: Set to true by default, but will be overridden if detection fails
-  const [useLocalServer, setUseLocalServer] = useState<boolean>(true);
-  const localServerUrl = 'http://localhost:3031';
+  const [useLocalServer, setUseLocalServer] = useState<boolean>(!import.meta.env.PROD);
+  const localServerUrl = !import.meta.env.PROD ? 'http://localhost:3031' : null;
   const [localRoot, setLocalRoot] = useState<string>('');
   // =====================================================
 
@@ -89,11 +88,21 @@ export default function Terminal({
   };
 
   // =====================================================
-  // 🔁 MODIFIED: Aggressive local server check
-  // Previously: Passive detection
-  // Now: Tries multiple times and falls back gracefully
+  // 🔁 FIXED: Local server check - skipped in production
+  // Previously: Always tried to connect
+  // Now: Only checks in development
   // =====================================================
   useEffect(() => {
+    // Skip local server check in production
+    if (import.meta.env.PROD) {
+      setUseLocalServer(false);
+      setMessages((prev) => [
+        ...prev,
+        { role: "agent", content: "⚠️ Running in cloud mode. Use file uploads or create files directly." }
+      ]);
+      return;
+    }
+    
     const checkLocalServer = async () => {
       let attempts = 0;
       const maxAttempts = 3;
@@ -101,7 +110,7 @@ export default function Terminal({
       while (attempts < maxAttempts) {
         try {
           const response = await fetch(`${localServerUrl}/api/status`, {
-            signal: AbortSignal.timeout(2000) // 2 second timeout
+            signal: AbortSignal.timeout(2000)
           });
           
           if (response.ok) {
@@ -125,7 +134,7 @@ export default function Terminal({
               console.log('Could not fetch drives, but continuing');
             }
             
-            return; // Success, exit function
+            return;
           }
         } catch (err) {
           console.log(`Local server check attempt ${attempts + 1} failed`);
@@ -133,12 +142,11 @@ export default function Terminal({
         
         attempts++;
         if (attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between attempts
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       
-      // If we get here, all attempts failed
-      console.log('Local server not available after multiple attempts');
+      console.log('Local server not available');
       setUseLocalServer(false);
       setMessages((prev) => [
         ...prev,
@@ -150,13 +158,13 @@ export default function Terminal({
   }, []);
 
   // =====================================================
-  // ✅ NEW: Request directory listing from appropriate source
-  // Previously: Only WebSocket to cloud
-  // Now: Uses local server if available, otherwise WebSocket
+  // 🔁 FIXED: Request directory listing - handles production mode
+  // Previously: Always tried local server
+  // Now: Uses WebSocket in production, local server in dev
   // =====================================================
   const requestDirectoryListing = async (path: string = ".") => {
-    if (useLocalServer) {
-      // Use local server API
+    if (useLocalServer && localServerUrl) {
+      // Use local server API (development only)
       try {
         const response = await fetch(`${localServerUrl}/api/list?path=${encodeURIComponent(path)}`);
         if (response.ok) {
@@ -173,7 +181,7 @@ export default function Terminal({
         }
       } catch (err) {
         console.error('Local server error:', err);
-        // If local server fails, try WebSocket as fallback
+        // Fallback to WebSocket
         if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
           socketRef.current.send(JSON.stringify({
             type: "list_dir",
@@ -182,7 +190,7 @@ export default function Terminal({
         }
       }
     } else {
-      // Fall back to WebSocket (cloud)
+      // Use WebSocket (cloud mode - production)
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
         socketRef.current.send(JSON.stringify({
           type: "list_dir",
@@ -194,11 +202,10 @@ export default function Terminal({
   // =====================================================
 
   // =====================================================
-  // ✅ NEW: Get available drives from local server
-  // Only works when local server is available
+  // 🔁 FIXED: Get drives - only in development
   // =====================================================
   const getDrives = async () => {
-    if (!useLocalServer) {
+    if (!useLocalServer || !localServerUrl) {
       return [];
     }
     
@@ -219,12 +226,11 @@ export default function Terminal({
   // =====================================================
 
   // =====================================================
-  // ✅ NEW: Set root directory via local server
-  // User selects a folder, local server uses it as root
+  // 🔁 FIXED: Update local root - only in development
   // =====================================================
   const updateLocalRoot = async (path: string) => {
-    if (!useLocalServer) {
-      alert('Local server not available. Please check if it\'s running.');
+    if (!useLocalServer || !localServerUrl) {
+      alert('Local server only available in development mode.');
       return false;
     }
     
@@ -241,7 +247,6 @@ export default function Terminal({
         setLocalRoot(data.currentRoot);
         await requestDirectoryListing('.');
         
-        // Tell agent to use this directory
         if (chatId) {
           sendMessage(`cd ${data.currentRoot}`, chatId);
         }
@@ -271,7 +276,7 @@ export default function Terminal({
   const handleNavigate = async (target: string) => {
     if (!chatId) return;
     
-    if (useLocalServer) {
+    if (useLocalServer && localServerUrl) {
       // With local server, just request new directory listing
       let newPath;
       if (target === "..") {
@@ -305,19 +310,18 @@ export default function Terminal({
   // =====================================================
 
   // =====================================================
-  // 🔁 MODIFIED: Handle file upload (now local server aware)
-  // Previously: Only cloud upload
-  // Now: Shows message about local server if available
+  // 🔁 MODIFIED: Handle file upload (now production aware)
+  // Previously: Tried local server in production
+  // Now: Uses cloud upload in production
   // =====================================================
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
     
-    if (useLocalServer) {
-      // With local server, we can copy files directly
+    if (useLocalServer && localServerUrl) {
+      // Development mode with local server
       const targetPath = prompt('Enter destination path (relative to current directory):', '.');
       if (targetPath) {
-        // TODO: Implement direct copy to local server folder
         setMessages((prev) => [
           ...prev,
           { role: "agent", content: `📋 File copy not yet implemented. Use 'create file' command instead.` }
@@ -326,7 +330,7 @@ export default function Terminal({
       return;
     }
     
-    // Fall back to cloud upload
+    // Cloud upload (production)
     const formData = new FormData();
     Array.from(files).forEach(file => {
       formData.append('files', file);
@@ -348,12 +352,10 @@ export default function Terminal({
           content: `✅ Uploaded ${data.files.length} files to ${data.path}` 
         }]);
         
-        // Update current directory and refresh file list
         if (data.path) {
           setCurrentDir(data.path);
           requestDirectoryListing(data.path);
           
-          // Tell agent to use this directory
           if (chatId) {
             sendMessage(`cd ${data.path}`, chatId);
           }
@@ -363,7 +365,6 @@ export default function Terminal({
       setMessages(prev => [...prev, { role: "agent", content: `❌ Upload failed: ${err}` }]);
     }
     
-    // Clear input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -371,53 +372,53 @@ export default function Terminal({
   // =====================================================
 
   // =====================================================
-  // ✅ NEW: Handle folder picker with local server
-  // Previously: Just a message
-  // Now: Actually lets user select folder with local server
+  // 🔁 FIXED: Handle folder picker - production aware
+  // Previously: Always tried local server
+  // Now: Cloud mode in production
   // =====================================================
   const handleFolderPicker = async () => {
     try {
-      // Get available drives (if local server is running)
-      let drives: string[] = [];
-      let localServerAvailable = false;
-      
-      try {
-        const response = await fetch(`${localServerUrl}/api/status`, {
-          signal: AbortSignal.timeout(2000)
-        });
-        localServerAvailable = response.ok;
+      if (useLocalServer && localServerUrl) {
+        // Development mode - local server
+        let drives: string[] = [];
+        let localServerAvailable = false;
+        
+        try {
+          const response = await fetch(`${localServerUrl}/api/status`, {
+            signal: AbortSignal.timeout(2000)
+          });
+          localServerAvailable = response.ok;
+          
+          if (localServerAvailable) {
+            const drivesData = await getDrives();
+            drives = drivesData;
+          }
+        } catch (err) {
+          console.log('Local server not available');
+        }
         
         if (localServerAvailable) {
-          const drivesData = await getDrives();
-          drives = drivesData;
-        }
-      } catch (err) {
-        console.log('Local server not available');
-      }
-      
-      if (localServerAvailable) {
-        // Local server mode - actual folder selection
-        const defaultPath = drives.length > 0 ? drives[0] : 'C:\\';
-        const path = prompt('Enter full path to folder:', defaultPath);
-        
-        if (path) {
-          await updateLocalRoot(path);
+          const defaultPath = drives.length > 0 ? drives[0] : 'C:\\';
+          const path = prompt('Enter full path to folder:', defaultPath);
+          
+          if (path) {
+            await updateLocalRoot(path);
+          }
         }
       } else {
-        // Cloud mode - use upload or manual path
+        // Production mode - cloud
         const choice = prompt(
-          'No local server detected. Choose mode:\n' +
+          'Cloud mode - choose action:\n' +
           '1: Upload files\n' +
-          '2: Enter manual path (will use /app on server)'
+          '2: Create new folder'
         );
         
         if (choice === '1') {
           fileInputRef.current?.click();
         } else if (choice === '2') {
-          const path = prompt('Enter path (will be created on server):', '/app/myfolder');
-          if (path) {
-            // Send mkdir command to agent
-            sendMessage(`mkdir ${path}`, chatId!);
+          const folderName = prompt('Enter folder name to create:', 'myfolder');
+          if (folderName) {
+            sendMessage(`mkdir ${folderName}`, chatId!);
             setTimeout(() => requestDirectoryListing("."), 1000);
           }
         }
@@ -450,16 +451,13 @@ export default function Terminal({
         if (jsonData.type === "directory_list") {
           setCurrentDir(jsonData.current_dir);
           setFileList(jsonData.files);
-          return; // Don't display in terminal
+          return;
         }
         
-        // Handle other JSON messages (chats, etc)
         if (jsonData.type === "chat_message") {
-          // Handle chat messages if needed
           return;
         }
       } catch {
-        // Not JSON, treat as regular terminal output
         console.log("🖥 Terminal received chunk:", data);
 
         const normalized = data.replace(/\r\n/g, "\n");
@@ -483,9 +481,6 @@ export default function Terminal({
     setMessages([]);
     loadChat(chatId);
     
-    // =================================================
-    // ✅ NEW: Request directory listing when chat loads
-    // =================================================
     setTimeout(() => requestDirectoryListing("."), 1000);
   }, [chatId]);
 
@@ -494,9 +489,7 @@ export default function Terminal({
   }, [messages]);
 
   // =================================================
-  // 🔁 MODIFIED: Connection message
-  // Previously: Only welcome message
-  // Now: Also requests initial directory listing and shows local server status
+  // 🔁 MODIFIED: Connection message - production aware
   // =================================================
   useEffect(() => {
     if (isConnected) {
@@ -504,14 +497,13 @@ export default function Terminal({
       
       const welcomeMessage = useLocalServer 
         ? "✅ Connected to local server - files accessed directly from your computer! Click 'Select Folder' to choose a directory."
-        : "✅ Connected. Use file browser to navigate, then type commands like 'create file', 'mkdir', etc.";
+        : "✅ Connected to cloud. Use file browser to navigate, then type commands.";
       
       setMessages((prev) => [
         ...prev,
         { role: "agent", content: welcomeMessage }
       ]);
       
-      // Request initial directory listing
       setTimeout(() => requestDirectoryListing("."), 1000);
     }
   }, [isConnected, useLocalServer]);
@@ -530,10 +522,6 @@ export default function Terminal({
 
     sendMessage(command, effectiveChatId);
     
-    // =================================================
-    // ✅ NEW: Refresh file browser after command
-    // Commands like mkdir, touch, rm change files
-    // =================================================
     setTimeout(() => requestDirectoryListing("."), 1000);
   };
 
@@ -545,7 +533,6 @@ export default function Terminal({
 
       {/* ================================================= */}
       {/* ✅ NEW: Local Server Status Indicator */}
-      {/* Shows if user is using local server or cloud mode */}
       {/* ================================================= */}
       {useLocalServer && (
         <div className="mb-2 text-xs text-green-400 bg-green-900/30 px-2 py-1 rounded">
@@ -556,8 +543,6 @@ export default function Terminal({
 
       {/* ================================================= */}
       {/* ✅ NEW: File Browser Controls */}
-      {/* Previously: No file browser controls */}
-      {/* Now: Toggle, upload, and folder picker (local server aware) */}
       {/* ================================================= */}
       <div className="mb-2 flex gap-2 flex-wrap">
         <button
@@ -593,8 +578,6 @@ export default function Terminal({
 
       {/* ================================================= */}
       {/* ✅ NEW: File Browser Component */}
-      {/* Previously: No file browser */}
-      {/* Now: Visual file/folder navigation */}
       {/* ================================================= */}
       {showFileBrowser && (
         <FileBrowser
@@ -612,7 +595,7 @@ export default function Terminal({
           <div className="text-zinc-500">
             {useLocalServer 
               ? "Connected to local server. Click 'Select Folder' to choose a directory."
-              : "Connected. Use file browser to navigate, then type commands."}
+              : "Connected to cloud. Use file browser to navigate, then type commands."}
           </div>
         )}
 
