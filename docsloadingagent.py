@@ -77,6 +77,25 @@ except Exception as e:
 # =====================================================
 
 # =====================================================
+# ✅ FIX: Pre-initialize agent at module load
+# This prevents timeout issues on Railway
+# =====================================================
+print("🚀 Pre-initializing research agent (this may take 20-30 seconds)...")
+_research_agent = None
+
+def get_research_agent():
+    """Get or create the research agent singleton"""
+    global _research_agent
+    if _research_agent is None:
+        _research_agent = create_research_agent()
+        print("✅ Research agent initialized and ready")
+    return _research_agent
+
+# Initialize immediately so it's ready when first connection arrives
+get_research_agent()
+# =====================================================
+
+# =====================================================
 # TAVILY SEARCH CLIENT
 # =====================================================
 class TavilySearchClient:
@@ -336,17 +355,13 @@ async def handle_research_websocket(websocket: WebSocket):
     """
     print("🟢 ENTERED handle_research_websocket")
     
-    
-    
     debug_print("WEBSOCKET", "✅ Research agent WebSocket connected")
     
-    try:
-        agent = create_research_agent()
-        debug_print("WEBSOCKET", "Agent created for connection")
-    except Exception as e:
-        debug_print("WEBSOCKET", f"❌ Failed to create agent: {e}")
-        await websocket.send_text(f"Error initializing agent: {str(e)}")
-        return
+    # 🔁 FIXED: Use pre-initialized agent instead of creating new one
+    # Previously: agent = create_research_agent() - caused timeout
+    # Now: Using singleton agent created at module load
+    agent = get_research_agent()
+    debug_print("WEBSOCKET", "Using pre-initialized agent")
     
     await websocket.send_text("✅ Research Agent ready! Ask me anything and I'll search the web.")
     

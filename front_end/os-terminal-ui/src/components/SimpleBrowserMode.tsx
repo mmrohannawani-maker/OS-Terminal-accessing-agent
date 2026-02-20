@@ -11,32 +11,23 @@ export default function SimpleBrowserMode() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'failed'>('connecting');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // =====================================================
-  // 🔁 FIXED: WebSocket connection with auto-reconnect
-  // Previously: No reconnection logic
-  // Now: Automatically reconnects on failure
+  // 🔁 FIXED: Single connection attempt - no retries
+  // Previously: Auto-reconnected on failure
+  // Now: Shows error and stops trying
   // =====================================================
   const wsRef = useRef<WebSocket | null>(null);
-  // 🔁 FIXED: Using null instead of undefined for timeout ref
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connectWebSocket = () => {
+  useEffect(() => {
     // Determine WebSocket URL based on environment
     const wsUrl = window.location.protocol === 'https:'
-        ? `wss://${window.location.host}/ws-browser`  // ← FIXED SPELLING
-        : `ws://${window.location.host}/ws-browser`;  // ← FIXED SPELLING
-
+      ? `wss://${window.location.host}/ws-browser`
+      : `ws://${window.location.host}/ws-browser`;
 
     console.log('🔌 Connecting to WebSocket:', wsUrl);
-    setConnectionStatus('connecting');
-    
-    // Close existing connection if any
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
     
     const ws = new WebSocket(wsUrl);
     
@@ -45,13 +36,11 @@ export default function SimpleBrowserMode() {
       if (ws.readyState !== WebSocket.OPEN) {
         console.log('⏱️ Connection timeout');
         ws.close();
-        setConnectionStatus('disconnected');
+        setConnectionStatus('failed');
         setMessages(prev => [...prev, { 
           role: "assistant", 
-          content: "⚠️ Connection timeout. Retrying..." 
+          content: "⚠️ Failed to connect to research agent. Please refresh the page." 
         }]);
-        // Try to reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
       }
     }, 10000);
     
@@ -76,75 +65,44 @@ export default function SimpleBrowserMode() {
     
     ws.onerror = (error) => {
       console.error("❌ WebSocket error:", error);
-      setConnectionStatus('disconnected');
-      // Don't show error message immediately - let onclose handle reconnection
+      setConnectionStatus('failed');
+      setMessages(prev => [...prev, { 
+        role: "assistant", 
+        content: "❌ Connection failed. Please refresh the page." 
+      }]);
     };
     
     ws.onclose = (event) => {
       clearTimeout(connectionTimeout);
       console.log("🔌 WebSocket disconnected:", event.code, event.reason);
-      setConnectionStatus('disconnected');
-      
-      // Try to reconnect if not closed normally (1000 = normal closure)
-      if (event.code !== 1000) {
-        setMessages(prev => [...prev, { 
-          role: "assistant", 
-          content: "⚠️ Connection lost. Reconnecting..." 
-        }]);
-        // Attempt to reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+      if (connectionStatus === 'connecting') {
+        setConnectionStatus('failed');
       }
     };
     
     wsRef.current = ws;
-  };
 
-  // Connect to WebSocket on component mount
-  useEffect(() => {
-    connectWebSocket();
-    
     // Cleanup on unmount
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
+      clearTimeout(connectionTimeout);
       if (wsRef.current) {
         wsRef.current.close(1000, "Component unmounting");
-        wsRef.current = null;
       }
     };
-  }, []);
+  }, []); // Empty dependency array = runs once
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // =====================================================
-  // 🔁 MODIFIED: Handle send with WebSocket
-  // =====================================================
   const handleSend = () => {
     if (!input.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || isLoading) return;
     
-    // Add user message
     setMessages(prev => [...prev, { role: "user", content: input }]);
-    
-    // Send to WebSocket
     wsRef.current.send(input);
     setInput("");
     setIsLoading(true);
-  };
-
-  // =====================================================
-  // ✅ NEW: Manual reconnect button
-  // =====================================================
-  const handleReconnect = () => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    connectWebSocket();
   };
 
   return (
@@ -153,25 +111,15 @@ export default function SimpleBrowserMode() {
       <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800">
         <span className="text-3xl">🌐</span>
         <h2 className="text-2xl font-bold text-blue-400">Browser Mode</h2>
-        {/* ================================================= */}
-        {/* 🔁 FIXED: Connection status indicator with more details */}
-        {/* ================================================= */}
-        <div className="ml-auto flex items-center gap-2">
+        {/* Connection Status Indicator */}
+        <div className="ml-auto">
           <span className={`text-xs px-2 py-1 rounded ${
             connectionStatus === 'connected' ? 'bg-green-600' :
             connectionStatus === 'connecting' ? 'bg-yellow-600' : 'bg-red-600'
           }`}>
             {connectionStatus === 'connected' ? 'Connected' :
-             connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+             connectionStatus === 'connecting' ? 'Connecting...' : 'Connection Failed'}
           </span>
-          {connectionStatus === 'disconnected' && (
-            <button
-              onClick={handleReconnect}
-              className="text-xs bg-blue-600 px-2 py-1 rounded hover:bg-blue-700"
-            >
-              Reconnect
-            </button>
-          )}
         </div>
       </div>
 
