@@ -376,9 +376,8 @@ async def ws_endpoint(ws: WebSocket):
         
         # If no directory set, use a default for commands
         if not current_dir:
-            default_dir = "/app" if os.name != 'nt' else os.getcwd()
-            set_current_dir(default_dir)
-            current_dir = default_dir
+            await ws.send_text("⚠️ No directory selected. Please select a folder first using the file browser.\n")
+            continue
         
         history = memory.load_chat_messages(chat_id) if chat_id else []
         print(f"[DEBUG] Loaded history: {len(history)} messages")

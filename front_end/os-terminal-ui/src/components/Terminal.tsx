@@ -97,9 +97,9 @@ export default function Terminal({
       try {
         const response = await fetch(`${localServerUrl}/api/status`);
         if (response.ok) {
-          const data = await response.json();
+          await response.json();
           setUseLocalServer(true);
-          setLocalRoot(data.currentRoot);
+          //setLocalRoot(data.currentRoot);
           console.log('✅ Local server detected at', localServerUrl);
           
           setMessages((prev) => [
