@@ -43,9 +43,9 @@ export default function App() {
     },
     // 🔁 FIXED: Second parameter is the WebSocket URL
     import.meta.env.PROD 
-      ? 'wss://os-terminal-accessing-agent-production.up.railway.app/ws'
+      ? 'wss://vibrant-patience-production-68b7.up.railway.app/ws'  // ← NEW DOMAIN
       : 'ws://localhost:8000/ws'
-  );
+    );
 
   // ✅ NEW: Handle sending user message AND auto-rename chat based on first user query
   const handleUserMessage = async (content: string, chatId: string) => {

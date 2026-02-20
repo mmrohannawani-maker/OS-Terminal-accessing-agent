@@ -23,9 +23,9 @@ export default function SimpleBrowserMode() {
 
   useEffect(() => {
     // Determine WebSocket URL based on environment
-    const wsUrl = window.location.protocol === 'https:'
-      ? `wss://${window.location.host}/ws-browser`
-      : `ws://${window.location.host}/ws-browser`;
+    const wsUrl = import.meta.env.PROD
+        ? 'wss://vibrant-patience-production-68b7.up.railway.app/ws-browser'  // ← NEW DOMAIN
+        : 'ws://localhost:8000/ws-browser';
 
     console.log('🔌 Connecting to WebSocket:', wsUrl);
     
