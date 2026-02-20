@@ -17,22 +17,56 @@ export function useWebSocket(
   const pendingRef = useRef<Record<string, PendingResolver>>({});
 
   useEffect(() => {
-    // ✅ NEW: Determine WebSocket URL with priority:
-    // 1. Parameter passed to function
-    // 2. Vite environment variable (for production)
-    // 3. Localhost fallback (for development)
-    const url = wsUrl || 
-                import.meta.env.VITE_WS_URL || 
-                "ws://localhost:8000/ws";
+    // =====================================================
+    // 🔁 FIXED: Better URL detection for both modes
+    // Previously: Used auto-detection with unused variables
+    // Now: Simplified and removed unused code
+    // =====================================================
     
-    console.log(`🔌 Connecting to WebSocket: ${url}`); // ✅ NEW: Log connection URL
+    // Determine the base URL
+    // 1. Use explicitly passed URL (highest priority)
+    // 2. Use environment variable
+    // 3. Fallback to localhost for development
+    
+    let url = wsUrl;
+    
+    if (!url) {
+      // Check for environment variable
+      url = import.meta.env.VITE_WS_URL;
+    }
+    
+    if (!url) {
+      // 🔁 FIXED: Removed unused protocol/host variables
+      // For development fallback
+      if (import.meta.env.DEV) {
+        url = 'ws://localhost:8000/ws';  // Default for terminal mode
+      } else {
+        // In production, we need the component to pass the full URL
+        // because we don't know if it's terminal or browser mode
+        console.error("❌ No WebSocket URL provided in production");
+        return;
+      }
+    }
+    
+    console.log(`🔌 Connecting to WebSocket: ${url}`);
     
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
-    socket.onopen = () => setIsConnected(true);
-    socket.onclose = () => setIsConnected(false);
-    socket.onerror = () => setIsConnected(false);
+    socket.onopen = () => {
+      console.log("✅ WebSocket connected");
+      setIsConnected(true);
+    };
+    
+    socket.onclose = () => {
+      console.log("🔌 WebSocket disconnected");
+      setIsConnected(false);
+    };
+    
+    socket.onerror = (error) => {
+      console.error("❌ WebSocket error:", error);
+      setIsConnected(false);
+    };
 
     socket.onmessage = (event) => {
 

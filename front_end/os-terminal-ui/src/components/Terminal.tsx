@@ -472,8 +472,36 @@ export default function Terminal({
 
         if (!typingRef.current) typeNextChar();
       }
-    }
+    },
+    // ✅ FIXED: Pass the correct WebSocket URL based on environment
+    import.meta.env.PROD 
+      ? 'wss://vibrant-patience-production-68b7.up.railway.app/ws'
+      : 'ws://localhost:8000/ws'
   );
+
+  // =====================================================
+  // 🔁 FIXED: Set default directory in production mode
+  // Previously: No default directory set
+  // Now: Auto-sets /app when connected in production
+  // =====================================================
+  useEffect(() => {
+    if (isConnected && !useLocalServer && !currentDir) {
+      console.log("📁 Setting default directory to /app");
+      const defaultDir = '/app';
+      setCurrentDir(defaultDir);
+      requestDirectoryListing(defaultDir);
+      
+      if (chatId) {
+        sendMessage(`cd ${defaultDir}`, chatId);
+      }
+      
+      setMessages((prev) => [
+        ...prev,
+        { role: "agent", content: `📁 Working directory set to: ${defaultDir}` }
+      ]);
+    }
+  }, [isConnected, useLocalServer, chatId, currentDir]);
+  // =====================================================
 
   // Reset terminal when chat changes
   useEffect(() => {
