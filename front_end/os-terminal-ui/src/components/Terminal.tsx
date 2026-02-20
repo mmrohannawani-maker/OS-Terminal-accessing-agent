@@ -320,22 +320,20 @@ export default function Terminal({
   // Now: Actually lets user select folder with local server
   // =====================================================
   const handleFolderPicker = async () => {
-    if (!useLocalServer) {
-      alert('Please download and run the local server app first to access folders directly.');
-      return;
-    }
-    
-    try {
-      // Get available drives
-      const drives = await getDrives();
-      
-      // Simple prompt for path (in production, use a proper UI)
-      const path = prompt(`Enter full path to folder (e.g., ${drives[0] || 'C:\\Users\\yourname'})`);
-      if (path) {
-        await updateLocalRoot(path);
+    if (useLocalServer) {
+      // Local server mode - actual folder selection
+      try {
+        const drives = await getDrives();
+        const path = prompt(`Enter full path to folder (e.g., ${drives[0] || 'C:\\Users\\yourname'})`);
+        if (path) {
+          await updateLocalRoot(path);
+        }
+      } catch (err) {
+        console.error('Folder picker error:', err);
       }
-    } catch (err) {
-      console.error('Folder picker error:', err);
+    } else {
+      // Cloud mode - use upload
+      alert('In cloud mode, please use "Upload Files" button to add files.');
     }
   };
   // =====================================================
@@ -495,13 +493,13 @@ export default function Terminal({
         
         <button
           onClick={handleFolderPicker}
-          className={`text-xs px-3 py-1 rounded ${
-            useLocalServer 
-              ? "bg-purple-600 hover:bg-purple-700" 
-              : "bg-gray-600 cursor-not-allowed opacity-50"
-          }`}
-          disabled={!useLocalServer}
-          title={!useLocalServer ? "Download local server app first" : "Select folder on your computer"}
+          // className={`text-xs px-3 py-1 rounded ${
+          //   useLocalServer 
+          //     ? "bg-purple-600 hover:bg-purple-700" 
+          //     : "bg-gray-600 cursor-not-allowed opacity-50"
+          // }`}
+          // disabled={!useLocalServer}
+          // title={!useLocalServer ? "Download local server app first" : "Select folder on your computer"}
         >
           📁 Select Folder
         </button>
