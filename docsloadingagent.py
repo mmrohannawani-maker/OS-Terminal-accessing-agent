@@ -336,12 +336,7 @@ async def handle_research_websocket(websocket: WebSocket):
     """
     print("🟢 ENTERED handle_research_websocket")
     
-    try:
-        await websocket.accept()
-        print("✅ WebSocket accepted in handler")
-    except Exception as e:
-        print(f"❌ Failed to accept websocket: {e}")
-        return
+    
     
     debug_print("WEBSOCKET", "✅ Research agent WebSocket connected")
     
