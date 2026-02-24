@@ -146,6 +146,8 @@ async def browser_chat(request: ChatRequest):
     Simple HTTP endpoint for Browser Mode
     Returns complete response in one request
     """
+    print("🔥🔥🔥 FUNCTION IS BEING CALLED! 🔥🔥🔥")  # ← ADD THIS LINE
+
     print(f"[BROWSER MODE] Received: {request.message[:50]}...")
     
     try:
