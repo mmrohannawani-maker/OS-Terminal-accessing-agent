@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, WebSocket
 import asyncio
 from agent_builder import build_terminal_agent, run_agent_stream
-from langchain_core.messages import SystemMessage, HumanMessage  # ← ADD HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from terminal_tools import set_user_path
 
 # =====================================================
@@ -32,7 +32,7 @@ app = FastAPI()
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with your frontend URL
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -146,22 +146,22 @@ async def browser_chat(request: ChatRequest):
     Simple HTTP endpoint for Browser Mode
     Returns complete response in one request
     """
-    print("🔥🔥🔥 FUNCTION IS BEING CALLED! 🔥🔥🔥")  # ← ADD THIS LINE
-
+    print("🔥🔥🔥 FUNCTION IS BEING CALLED! 🔥🔥🔥")
     print(f"[BROWSER MODE] Received: {request.message[:50]}...")
-    print(f"🟢 RECEIVED REQUEST: {request.message}")  # ← ADD THIS
-    print(f"🟢 SESSION ID: {request.session_id}")     # ← ADD THIS
+    print(f"🟢 RECEIVED REQUEST: {request.message}")
+    print(f"🟢 SESSION ID: {request.session_id}")
     
     try:
         # Import here to avoid circular imports
         from docsloadingagent import get_research_agent
         agent = get_research_agent()
+        print("🟢 AGENT LOADED SUCCESSFULLY")
         
         # Simple invoke (not stream)
         result = agent.invoke({
             "messages": [HumanMessage(content=request.message)]
         })
-        print("🟢 AGENT INVOKE COMPLETE")  # ← ADD THIS
+        print("🟢 AGENT INVOKE COMPLETE")
 
         # Extract response
         response = ""
@@ -172,22 +172,22 @@ async def browser_chat(request: ChatRequest):
                 if hasattr(msg, 'content') and msg.content:
                     response += msg.content
         
+        print(f"🟢 RESPONSE LENGTH: {len(response)}")
+        
         # Save to memory if session_id provided
         if request.session_id and memory:
             try:
                 memory.add_user_message(f"[{request.session_id}] {request.message}")
                 if response:
                     memory.add_assistant_message(f"[{request.session_id}] {response[:500]}...")
+                print("🟢 MEMORY SAVED")
             except Exception as e:
                 print(f"[DEBUG] Failed to save to memory: {e}")
-
-        print(f"🟢 RESPONSE LENGTH: {len(response)}")  # ← ADD THIS
         
         return {"response": response, "session_id": request.session_id}
         
     except Exception as e:
-        print(f"[ERROR] Browser chat failed: {e}")
-        print(f"🔴 ERROR: {str(e)}")  # ← ADD THIS
+        print(f"🔴 ERROR IN BROWSER CHAT: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
@@ -208,30 +208,42 @@ async def root():
 async def health():
     return {"status": "healthy", "timestamp": str(asyncio.get_event_loop().time())}
 
+# =====================================================
+# ✅ FIXED: GET endpoint for browser-chat (helps with debugging)
+# =====================================================
 @app.get("/api/browser-chat")
 async def browser_chat_get():
-    return {"error": "This endpoint requires POST", "method": "GET"}
-
-# =====================================================
-# ❌ REMOVED: WebSocket endpoint for Browser Mode
-# Previously: @app.websocket("/ws-browser") was causing issues
-# Now: Using HTTP POST /api/browser-chat instead
-# =====================================================
-# The entire WebSocket browser endpoint has been removed
+    return {"error": "This endpoint requires POST", "method": "GET", "message": "Use POST request with JSON body containing 'message' field"}
 # =====================================================
 
+# =====================================================
+# ✅ FIXED: Route debugging at startup
+# =====================================================
 @app.on_event("startup")
 async def show_routes():
     print("="*60)
     print("REGISTERED ROUTES:")
+    route_list = []
     for route in app.routes:
         methods = getattr(route, 'methods', None)
         if methods:
+            route_list.append(f"  {route.path} - {methods}")
             print(f"  {route.path} - {methods}")
         else:
+            route_list.append(f"  {route.path} - WebSocket")
             print(f"  {route.path} - WebSocket")
     print("="*60)
+    
+    # Verify browser-chat endpoints are registered
+    print("\n✅ BROWSER-CHAT ENDPOINTS:")
+    print("  GET /api/browser-chat - Should be registered")
+    print("  POST /api/browser-chat - Should be registered")
+    print("="*60)
+# =====================================================
 
+# =====================================================
+# UNCHANGED: WebSocket endpoint for Terminal Mode
+# =====================================================
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
@@ -240,7 +252,7 @@ async def ws_endpoint(ws: WebSocket):
     await ws.send_text("📌 Session started. Click folders to navigate, then type commands.\n")
 
     # =================================================
-    # UNCHANGED: Agent path context updater
+    # Agent path context updater
     # =================================================
     def update_agent_context(agent, new_path):
         try:
@@ -259,7 +271,7 @@ async def ws_endpoint(ws: WebSocket):
     # =================================================
 
     # =================================================
-    # UNCHANGED: Sandbox updater
+    # Sandbox updater
     # =================================================
     def update_session_sandbox(agent, new_root: str):
         new_root = os.path.abspath(new_root)
@@ -293,7 +305,7 @@ async def ws_endpoint(ws: WebSocket):
             user_query = raw
 
         # =================================================
-        # ✅ NEW: File browser - list directory contents
+        # File browser - list directory contents
         # =================================================
         if msg_type == "list_dir":
             current = get_current_dir()
@@ -328,7 +340,7 @@ async def ws_endpoint(ws: WebSocket):
             continue
 
         # =================================================
-        # ✅ NEW: Sidebar – list chats
+        # Sidebar – list chats
         # =================================================
         if msg_type == "list_chats":
             chats = memory.list_chats()
@@ -344,7 +356,7 @@ async def ws_endpoint(ws: WebSocket):
             continue
 
         # =================================================
-        # ✅ NEW: Create new chat
+        # Create new chat
         # =================================================
         if msg_type == "new_chat":
             chat_id = str(uuid.uuid4())
@@ -363,7 +375,7 @@ async def ws_endpoint(ws: WebSocket):
             continue
 
         # =================================================
-        # ✅ NEW: Delete a chat handler
+        # Delete a chat handler
         # =================================================
         if msg_type == "delete_chat":
             chat_id = data.get("chat_id")
@@ -378,7 +390,7 @@ async def ws_endpoint(ws: WebSocket):
             continue
 
         # =================================================
-        # 🔁 MODIFIED: Message handling
+        # Message handling
         # =================================================
         if msg_type == "message":
             chat_id = data["chat_id"]
@@ -428,8 +440,6 @@ async def ws_endpoint(ws: WebSocket):
         if msg_type == "message" and chat_id:
             memory.save_chat_message(chat_id, "assistant", agent_response)
             print(f"[DEBUG] Saved assistant response, length={len(agent_response)}")
-
-
 
 # At the VERY BOTTOM of api.py, add this:
 if __name__ == "__main__":
