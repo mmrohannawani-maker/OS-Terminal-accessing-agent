@@ -140,6 +140,30 @@ class ChatRequest(BaseModel):
 
 print("✅ Registering POST /api/browser-chat")
 
+@app.get("/api/browser-chat")
+async def browser_chat_get():
+    return {"error": "This endpoint requires POST", "method": "GET", "message": "Use POST request with JSON body containing 'message' field"}
+# =====================================================
+
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "message": "Terminal Agent API is running",
+        "websocket": "/ws",
+        "browser_api": "/api/browser-chat",
+        "upload": "/api/upload",
+        "usage": "Connect to wss://your-app.railway.app/ws for Terminal Mode or POST to /api/browser-chat for Browser Mode"
+    }
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "timestamp": str(asyncio.get_event_loop().time())}
+
+# =====================================================
+# ✅ FIXED: GET endpoint for browser-chat (helps with debugging)
+# =====================================================
+
 @app.post("/api/browser-chat")
 async def browser_chat(request: ChatRequest):
     """
@@ -191,29 +215,9 @@ async def browser_chat(request: ChatRequest):
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
-# =====================================================
 
-@app.get("/")
-async def root():
-    return {
-        "status": "online",
-        "message": "Terminal Agent API is running",
-        "websocket": "/ws",
-        "browser_api": "/api/browser-chat",
-        "upload": "/api/upload",
-        "usage": "Connect to wss://your-app.railway.app/ws for Terminal Mode or POST to /api/browser-chat for Browser Mode"
-    }
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "timestamp": str(asyncio.get_event_loop().time())}
 
-# =====================================================
-# ✅ FIXED: GET endpoint for browser-chat (helps with debugging)
-# =====================================================
-@app.get("/api/browser-chat")
-async def browser_chat_get():
-    return {"error": "This endpoint requires POST", "method": "GET", "message": "Use POST request with JSON body containing 'message' field"}
 # =====================================================
 
 # =====================================================
