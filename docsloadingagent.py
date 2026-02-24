@@ -1,11 +1,13 @@
 """
-Browser Research Agent with WebBaseLoader
+Browser Research Agent with WebBaseLoader - HTTP Version
 ===========================================
 This agent:
 1. Takes user query
 2. Uses Tavily to get 2-3 relevant links
 3. Loads those links using WebBaseLoader
 4. LLM summarizes the loaded content with source citations
+
+Now uses HTTP instead of WebSocket for better compatibility
 """
 
 # =====================================================
@@ -91,7 +93,7 @@ def get_research_agent():
         print("✅ Research agent initialized and ready")
     return _research_agent
 
-# Initialize immediately so it's ready when first connection arrives
+# Initialize immediately so it's ready when first request arrives
 get_research_agent()
 # =====================================================
 
@@ -344,83 +346,55 @@ def create_research_agent():
     return agent
 
 # =====================================================
-# WEBSOCKET HANDLER
+# 🔁 REPLACED: HTTP handler instead of WebSocket
+# Previously: WebSocket handler (handle_research_websocket)
+# Now: Simple function that returns response for HTTP endpoint
 # =====================================================
-from fastapi import WebSocket
-import asyncio
-
-async def handle_research_websocket(websocket: WebSocket):
+def process_browser_query(query: str, session_id: Optional[str] = None) -> str:
     """
-    WebSocket handler for research agent with PostgreSQL memory
+    Process a browser mode query and return the response
+    This is called by the HTTP endpoint in api.py
     """
-    print("🟢 ENTERED handle_research_websocket")
+    print(f"[BROWSER AGENT] Processing query: {query[:50]}...")
     
-    debug_print("WEBSOCKET", "✅ Research agent WebSocket connected")
-    
-    # 🔁 FIXED: Use pre-initialized agent instead of creating new one
-    # Previously: agent = create_research_agent() - caused timeout
-    # Now: Using singleton agent created at module load
+    # Get the pre-initialized agent
     agent = get_research_agent()
-    debug_print("WEBSOCKET", "Using pre-initialized agent")
     
-    await websocket.send_text("✅ Research Agent ready! Ask me anything and I'll search the web.")
-    
-    session_id = str(uuid.uuid4())[:8]
-    debug_print("WEBSOCKET", f"Session ID: {session_id}")
-    
-    while True:
+    # Save user message to PostgreSQL if memory available
+    if memory and session_id:
         try:
-            user_input = await websocket.receive_text()
-            debug_print("WEBSOCKET", f"📥 Received: {user_input[:50]}...")
-            
-            if user_input.lower() in ['exit', 'quit']:
-                debug_print("WEBSOCKET", "Closing connection")
-                await websocket.send_text("👋 Goodbye!")
-                break
-            
-            # Save user message to PostgreSQL if memory available
-            if memory:
-                try:
-                    memory.add_user_message(f"[{session_id}] {user_input}")
-                    debug_print("MEMORY", "User message saved to PostgreSQL")
-                except Exception as e:
-                    debug_print("MEMORY", f"Failed to save user message: {e}")
-            
-            debug_print("WEBSOCKET", "🤖 Invoking agent...")
-            
-            agent_input = {
-                "messages": [HumanMessage(content=user_input)]
-            }
-            
-            full_response = ""
-            
-            for chunk in agent.stream(agent_input):
-                if hasattr(chunk, 'content') and chunk.content:
-                    chunk_text = chunk.content
-                    full_response += chunk_text
-                    debug_print("WEBSOCKET", f"📤 Sending: {chunk_text[:50]}...")
-                    await websocket.send_text(chunk_text)
-                elif isinstance(chunk, dict) and 'messages' in chunk:
-                    for msg in chunk['messages']:
-                        if hasattr(msg, 'content') and msg.content:
-                            chunk_text = msg.content
-                            full_response += chunk_text
-                            await websocket.send_text(chunk_text)
-            
-            # Save assistant response if memory available
-            if memory and full_response:
-                try:
-                    memory.add_assistant_message(f"[{session_id}] {full_response[:500]}...")
-                    debug_print("MEMORY", "Assistant response saved to PostgreSQL")
-                except Exception as e:
-                    debug_print("MEMORY", f"Failed to save assistant response: {e}")
-            
-            debug_print("WEBSOCKET", "✅ Response complete")
-            
+            memory.add_user_message(f"[{session_id}] {query}")
+            debug_print("MEMORY", "User message saved to PostgreSQL")
         except Exception as e:
-            debug_print("WEBSOCKET", f"❌ Error: {e}")
-            try:
-                await websocket.send_text(f"Error: {str(e)}")
-            except:
-                pass
-            break
+            debug_print("MEMORY", f"Failed to save user message: {e}")
+    
+    # Prepare input
+    agent_input = {
+        "messages": [HumanMessage(content=query)]
+    }
+    
+    # Get response (not streaming for HTTP)
+    full_response = ""
+    result = agent.invoke(agent_input)
+    
+    # Extract response
+    if hasattr(result, 'content'):
+        full_response = result.content
+    elif isinstance(result, dict) and 'messages' in result:
+        for msg in result['messages']:
+            if hasattr(msg, 'content') and msg.content:
+                full_response += msg.content
+    
+    # Save assistant response if memory available
+    if memory and full_response and session_id:
+        try:
+            memory.add_assistant_message(f"[{session_id}] {full_response[:500]}...")
+            debug_print("MEMORY", "Assistant response saved to PostgreSQL")
+        except Exception as e:
+            debug_print("MEMORY", f"Failed to save assistant response: {e}")
+    
+    return full_response
+# =====================================================
+
+# ❌ REMOVED: WebSocket handler (handle_research_websocket)
+# No longer needed - using HTTP instead

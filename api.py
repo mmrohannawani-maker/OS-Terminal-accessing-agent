@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, WebSocket
 import asyncio
 from agent_builder import build_terminal_agent, run_agent_stream
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage  # ← ADD HumanMessage
 from terminal_tools import set_user_path
 
 # =====================================================
@@ -18,6 +18,11 @@ from typing import List
 # ✅ NEW: CORS middleware
 # =====================================================
 from fastapi.middleware.cors import CORSMiddleware
+# =====================================================
+# ✅ NEW: Pydantic for HTTP request model
+# =====================================================
+from pydantic import BaseModel
+from typing import Optional
 # =====================================================
 
 app = FastAPI()
@@ -126,15 +131,67 @@ async def upload_files(files: List[UploadFile] = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 # =====================================================
 
+# =====================================================
+# ✅ NEW: HTTP endpoint for Browser Mode (no WebSocket)
+# =====================================================
+class ChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+@app.post("/api/browser-chat")
+async def browser_chat(request: ChatRequest):
+    """
+    Simple HTTP endpoint for Browser Mode
+    Returns complete response in one request
+    """
+    print(f"[BROWSER MODE] Received: {request.message[:50]}...")
+    
+    try:
+        # Import here to avoid circular imports
+        from docsloadingagent import get_research_agent
+        agent = get_research_agent()
+        
+        # Simple invoke (not stream)
+        result = agent.invoke({
+            "messages": [HumanMessage(content=request.message)]
+        })
+        
+        # Extract response
+        response = ""
+        if hasattr(result, 'content'):
+            response = result.content
+        elif isinstance(result, dict) and 'messages' in result:
+            for msg in result['messages']:
+                if hasattr(msg, 'content') and msg.content:
+                    response += msg.content
+        
+        # Save to memory if session_id provided
+        if request.session_id and memory:
+            try:
+                memory.add_user_message(f"[{request.session_id}] {request.message}")
+                if response:
+                    memory.add_assistant_message(f"[{request.session_id}] {response[:500]}...")
+            except Exception as e:
+                print(f"[DEBUG] Failed to save to memory: {e}")
+        
+        return {"response": response, "session_id": request.session_id}
+        
+    except Exception as e:
+        print(f"[ERROR] Browser chat failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+# =====================================================
+
 @app.get("/")
 async def root():
     return {
         "status": "online",
         "message": "Terminal Agent API is running",
         "websocket": "/ws",
-        "websocket_browser": "/ws-browser",
+        "browser_api": "/api/browser-chat",
         "upload": "/api/upload",
-        "usage": "Connect to wss://your-app.railway.app/ws for Terminal Mode or /ws-browser for Browser Mode"
+        "usage": "Connect to wss://your-app.railway.app/ws for Terminal Mode or POST to /api/browser-chat for Browser Mode"
     }
 
 @app.get("/health")
@@ -142,32 +199,11 @@ async def health():
     return {"status": "healthy", "timestamp": str(asyncio.get_event_loop().time())}
 
 # =====================================================
-# ✅ FIXED: Browser Mode WebSocket Endpoint with better error handling
+# ❌ REMOVED: WebSocket endpoint for Browser Mode
+# Previously: @app.websocket("/ws-browser") was causing issues
+# Now: Using HTTP POST /api/browser-chat instead
 # =====================================================
-try:
-    print("="*60)
-    print("🔍 Attempting to import from docsloadingagent...")
-    from docsloadingagent import handle_research_websocket
-    print("✅ Successfully imported docsloadingagent")
-    
-    @app.websocket("/ws-browser")
-    async def browser_websocket(websocket: WebSocket):
-        print("="*60)
-        print("🔴 BROWSER MODE CONNECTION ATTEMPT")
-        print(f"Client: {websocket.client}")
-        print("="*60)
-        try:
-            await handle_research_websocket(websocket)
-        except Exception as e:
-            print(f"❌ Error in browser websocket: {e}")
-            import traceback
-            traceback.print_exc()
-    print("✅ /ws-browser endpoint registered")
-except Exception as e:
-    print(f"❌ FAILED TO IMPORT BROWSER AGENT: {e}")
-    print("Browser mode will be disabled")
-    import traceback
-    traceback.print_exc()
+# The entire WebSocket browser endpoint has been removed
 # =====================================================
 
 @app.websocket("/ws")

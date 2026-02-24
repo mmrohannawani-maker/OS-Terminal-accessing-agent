@@ -11,99 +11,76 @@ export default function SimpleBrowserMode() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'failed'>('connecting');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // =====================================================
-  // 🔁 FIXED: Single connection attempt - no retries
-  // Previously: Auto-reconnected on failure
-  // Now: Shows error and stops trying
+  // 🔁 REPLACED: HTTP session ID instead of WebSocket
+  // Previously: WebSocket connection with ref
+  // Now: Simple session ID for tracking conversations
   // =====================================================
-  const wsRef = useRef<WebSocket | null>(null);
-
-  useEffect(() => {
-    // Determine WebSocket URL based on environment
-    const wsUrl = import.meta.env.PROD
-        ? 'wss://vibrant-patience-production-68b7.up.railway.app/ws-browser'  // ← NEW DOMAIN
-        : 'ws://localhost:8000/ws-browser';
-
-    console.log('🔌 Connecting to WebSocket:', wsUrl);
-    
-    const ws = new WebSocket(wsUrl);
-    
-    // Set timeout for connection
-    const connectionTimeout = setTimeout(() => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        console.log('⏱️ Connection timeout');
-        ws.close();
-        setConnectionStatus('failed');
-        setMessages(prev => [...prev, { 
-          role: "assistant", 
-          content: "⚠️ Failed to connect to research agent. Please refresh the page." 
-        }]);
-      }
-    }, 10000);
-    
-    ws.onopen = () => {
-      clearTimeout(connectionTimeout);
-      console.log("✅ WebSocket connected");
-      setConnectionStatus('connected');
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: "✅ Connected to research agent. I can search the web for information!" 
-      }]);
-    };
-    
-    ws.onmessage = (event) => {
-      console.log("📨 Received:", event.data.substring(0, 50) + "...");
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: event.data 
-      }]);
-      setIsLoading(false);
-    };
-    
-    ws.onerror = (error) => {
-      console.error("❌ WebSocket error:", error);
-      setConnectionStatus('failed');
-      setMessages(prev => [...prev, { 
-        role: "assistant", 
-        content: "❌ Connection failed. Please refresh the page." 
-      }]);
-    };
-    
-    ws.onclose = (event) => {
-      clearTimeout(connectionTimeout);
-      console.log("🔌 WebSocket disconnected:", event.code, event.reason);
-      if (connectionStatus === 'connecting') {
-        setConnectionStatus('failed');
-      }
-    };
-    
-    wsRef.current = ws;
-
-    // Cleanup on unmount
-    return () => {
-      clearTimeout(connectionTimeout);
-      if (wsRef.current) {
-        wsRef.current.close(1000, "Component unmounting");
-      }
-    };
-  }, []); // Empty dependency array = runs once
+  const [sessionId] = useState(() => crypto.randomUUID());
+  // =====================================================
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = () => {
-    if (!input.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || isLoading) return;
+  // =====================================================
+  // 🔁 REPLACED: HTTP fetch instead of WebSocket send
+  // Previously: WebSocket connection with timeout and retries
+  // Now: Simple POST request - no connection management needed
+  // =====================================================
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
     
-    setMessages(prev => [...prev, { role: "user", content: input }]);
-    wsRef.current.send(input);
+    // Add user message immediately
+    const userMessage = input;
+    setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setInput("");
     setIsLoading(true);
+    
+    try {
+      // Send to HTTP endpoint
+      const response = await fetch('/api/browser-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          session_id: sessionId
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: `❌ Error: ${data.error}` 
+        }]);
+      } else {
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: data.response 
+        }]);
+      }
+    } catch (error) {
+      console.error("❌ Fetch error:", error);
+      setMessages(prev => [...prev, { 
+        role: "assistant", 
+        content: "❌ Failed to connect to server. Please try again." 
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
+  // =====================================================
 
   return (
     <div className="max-w-4xl mx-auto bg-black rounded-lg shadow-lg p-6">
@@ -111,14 +88,12 @@ export default function SimpleBrowserMode() {
       <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800">
         <span className="text-3xl">🌐</span>
         <h2 className="text-2xl font-bold text-blue-400">Browser Mode</h2>
-        {/* Connection Status Indicator */}
+        {/* ================================================= */}
+        {/* ✅ NEW: Simple status indicator - always "Connected" with HTTP */}
+        {/* ================================================= */}
         <div className="ml-auto">
-          <span className={`text-xs px-2 py-1 rounded ${
-            connectionStatus === 'connected' ? 'bg-green-600' :
-            connectionStatus === 'connecting' ? 'bg-yellow-600' : 'bg-red-600'
-          }`}>
-            {connectionStatus === 'connected' ? 'Connected' :
-             connectionStatus === 'connecting' ? 'Connecting...' : 'Connection Failed'}
+          <span className="text-xs bg-green-600 px-2 py-1 rounded">
+            HTTP Mode
           </span>
         </div>
       </div>
@@ -167,12 +142,12 @@ export default function SimpleBrowserMode() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder="Type your message here..."
-          disabled={connectionStatus !== 'connected' || isLoading}
+          disabled={isLoading}
           className="flex-1 bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-400 disabled:opacity-50"
         />
         <button
           onClick={handleSend}
-          disabled={!input.trim() || connectionStatus !== 'connected' || isLoading}
+          disabled={!input.trim() || isLoading}
           className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Send
