@@ -36,42 +36,71 @@ export default function SimpleBrowserMode() {
     
     // Add user message immediately
     const userMessage = input;
+    console.log("🔵 [BROWSER] Sending message:", userMessage);
+    console.log("🔵 [BROWSER] Session ID:", sessionId);
+    
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setInput("");
     setIsLoading(true);
     
     try {
-      // Send to HTTP endpoint
-      const response = await fetch('/api/browser-chat', {
+      // Determine the correct URL based on environment
+      const baseUrl = import.meta.env.PROD 
+        ? 'https://vibrant-patience-production-68b7.up.railway.app'
+        : '';
+      
+      const url = `${baseUrl}/api/browser-chat`;
+      console.log("🔵 [BROWSER] Fetch URL:", url);
+      
+      const requestBody = {
+        message: userMessage,
+        session_id: sessionId
+      };
+      console.log("🔵 [BROWSER] Request body:", requestBody);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: userMessage,
-          session_id: sessionId
-        })
+        body: JSON.stringify(requestBody)
       });
       
+      console.log("🔵 [BROWSER] Response status:", response.status);
+      console.log("🔵 [BROWSER] Response OK:", response.ok);
+      
       if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
+        const errorText = await response.text();
+        console.log("🔴 [BROWSER] Error response text:", errorText);
+        throw new Error(`HTTP error ${response.status}: ${errorText}`);
       }
       
       const data = await response.json();
+      console.log("🔵 [BROWSER] Response data:", data);
       
       if (data.error) {
+        console.log("🔴 [BROWSER] Error in response:", data.error);
         setMessages(prev => [...prev, { 
           role: "assistant", 
           content: `❌ Error: ${data.error}` 
         }]);
       } else {
+        console.log("✅ [BROWSER] Success! Response length:", data.response?.length);
         setMessages(prev => [...prev, { 
           role: "assistant", 
           content: data.response 
         }]);
       }
     } catch (error) {
-      console.error("❌ Fetch error:", error);
+      // 🔁 FIXED: Type assertion for error
+      const err = error as Error;
+      console.error("🔴 [BROWSER] Fetch error:", err);
+      console.error("🔴 [BROWSER] Error details:", {
+        name: err.name,
+        message: err.message,
+        stack: err.stack
+      });
+      
       setMessages(prev => [...prev, { 
         role: "assistant", 
         content: "❌ Failed to connect to server. Please try again." 
@@ -156,7 +185,3 @@ export default function SimpleBrowserMode() {
     </div>
   );
 }
-
-
-
-// af
