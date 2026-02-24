@@ -49,7 +49,7 @@ export default function SimpleBrowserMode() {
         ? 'https://vibrant-patience-production-68b7.up.railway.app'
         : '';
       
-      const url = `${baseUrl}/api/browser-chat`;
+      const url = `${baseUrl}/api/browser/chat`;  // ← New path
       console.log("🔵 [BROWSER] Fetch URL:", url);
       
       const requestBody = {

@@ -164,7 +164,7 @@ async def health():
 # ✅ FIXED: GET endpoint for browser-chat (helps with debugging)
 # =====================================================
 
-@app.post("/api/browser-chat")
+@app.post("/api/browser/chat")  # ← New path
 async def browser_chat(request: ChatRequest):
     """
     Simple HTTP endpoint for Browser Mode
