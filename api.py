@@ -208,6 +208,10 @@ async def root():
 async def health():
     return {"status": "healthy", "timestamp": str(asyncio.get_event_loop().time())}
 
+@app.get("/api/browser-chat")
+async def browser_chat_get():
+    return {"error": "This endpoint requires POST", "method": "GET"}
+
 # =====================================================
 # ❌ REMOVED: WebSocket endpoint for Browser Mode
 # Previously: @app.websocket("/ws-browser") was causing issues
