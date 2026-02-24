@@ -215,7 +215,10 @@ async def browser_chat(request: ChatRequest):
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
-
+@app.post("/api/test-browser")
+async def test_browser(request: ChatRequest):
+    print("🔥 TEST ENDPOINT WORKING!")
+    return {"response": f"Echo: {request.message}"}
 
 
 # =====================================================
