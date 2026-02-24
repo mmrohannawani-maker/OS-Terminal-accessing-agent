@@ -149,6 +149,8 @@ async def browser_chat(request: ChatRequest):
     print("🔥🔥🔥 FUNCTION IS BEING CALLED! 🔥🔥🔥")  # ← ADD THIS LINE
 
     print(f"[BROWSER MODE] Received: {request.message[:50]}...")
+    print(f"🟢 RECEIVED REQUEST: {request.message}")  # ← ADD THIS
+    print(f"🟢 SESSION ID: {request.session_id}")     # ← ADD THIS
     
     try:
         # Import here to avoid circular imports
@@ -159,7 +161,8 @@ async def browser_chat(request: ChatRequest):
         result = agent.invoke({
             "messages": [HumanMessage(content=request.message)]
         })
-        
+        print("🟢 AGENT INVOKE COMPLETE")  # ← ADD THIS
+
         # Extract response
         response = ""
         if hasattr(result, 'content'):
@@ -177,11 +180,14 @@ async def browser_chat(request: ChatRequest):
                     memory.add_assistant_message(f"[{request.session_id}] {response[:500]}...")
             except Exception as e:
                 print(f"[DEBUG] Failed to save to memory: {e}")
+
+        print(f"🟢 RESPONSE LENGTH: {len(response)}")  # ← ADD THIS
         
         return {"response": response, "session_id": request.session_id}
         
     except Exception as e:
         print(f"[ERROR] Browser chat failed: {e}")
+        print(f"🔴 ERROR: {str(e)}")  # ← ADD THIS
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
