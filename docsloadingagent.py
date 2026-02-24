@@ -142,7 +142,7 @@ class TavilySearchClient:
     "research_and_summarize",
     description="Search the web for information about a query, load the content from found URLs, and provide summaries with source citations.",
 )
-def research_and_summarize(query: str, max_links: int = 3) -> str:
+def research_and_summarize(query: str, max_links: int = 3) -> tuple:
     """
     Research a topic by:
     1. Finding relevant links via Tavily search
@@ -238,7 +238,9 @@ def research_and_summarize(query: str, max_links: int = 3) -> str:
     
     debug_print("TOOL", f"✅ Formatted output: {len(formatted_output)} chars")
     
-    return formatted_output
+    sources_dict = {str(i): source['url'] for i, source in enumerate(all_content, 1)}
+    
+    return formatted_output, sources_dict
 
 # =====================================================
 # MIDDLEWARE: Track Sources
@@ -298,10 +300,31 @@ IMPORTANT RULES:
 - If a source doesn't contain relevant information, you can mention that
 - If no sources are found, inform the user
 
-RESPONSE FORMAT:
+OUTPUT FORMAT - STRICT RULES:
 - Start with a brief overview
 - Present findings with inline citations [1], [2]
-- DO NOT add a separate "Sources" section at the end strictly
+- END with a "Sources" section listing all URLs in this EXACT format:
+
+Sources:
+[1] [Title - Description] - URL
+[2] [Title - Description] - URL
+
+STRICT RULES:
+- DO NOT add any text after the Sources section
+- DO NOT add conclusions, summaries, or "For deeper insights" sentences
+- DO NOT repeat URLs anywhere else in the response
+- The Sources section MUST be the LAST thing in your response
+- Absolutely NO text after the Sources section
+
+Example of correct format:
+"Based on my research about AWS [1][2], here's what I found:
+- AWS provides cloud computing services [1]
+- It was launched in 2006 [2]
+
+Sources:
+[1] Why Choose AWS? - https://aws.amazon.com/what-is-aws/
+[2] Amazon Web Services - https://en.wikipedia.org/wiki/Amazon_Web_Services"
+
 Let's begin!
 """
 

@@ -166,11 +166,11 @@ async def health():
 # ✅ FIXED: GET endpoint for browser-chat (helps with debugging)
 # =====================================================
 
-@app.post("/api/browser/chat")  # ← New path
+@app.post("/api/browser/chat")
 async def browser_chat(request: ChatRequest):
     """
     Simple HTTP endpoint for Browser Mode
-    Returns complete response in one request
+    Returns complete response in one request with sources
     """
     print("🔥🔥🔥 FUNCTION IS BEING CALLED! 🔥🔥🔥")
     print(f"[BROWSER MODE] Received: {request.message[:50]}...")
@@ -183,22 +183,37 @@ async def browser_chat(request: ChatRequest):
         agent = get_research_agent()
         print("🟢 AGENT LOADED SUCCESSFULLY")
         
-        # Simple invoke (not stream)
+        # =====================================================
+        # 🔁 MODIFIED: Invoke agent and capture both response and sources
+        # Previously: Only got response
+        # Now: Expecting tuple of (response_text, sources_dict)
+        # =====================================================
         result = agent.invoke({
             "messages": [HumanMessage(content=request.message)]
         })
         print("🟢 AGENT INVOKE COMPLETE")
 
-        # Extract response
+        # =====================================================
+        # 🔁 MODIFIED: Handle tuple response
+        # Previously: result was just string
+        # Now: result can be (response_text, sources_dict)
+        # =====================================================
         response = ""
-        if hasattr(result, 'content'):
+        sources = {}
+        
+        if isinstance(result, tuple) and len(result) == 2:
+            response, sources = result
+        elif hasattr(result, 'content'):
             response = result.content
         elif isinstance(result, dict) and 'messages' in result:
             for msg in result['messages']:
                 if hasattr(msg, 'content') and msg.content:
                     response += msg.content
+        else:
+            response = str(result)
         
         print(f"🟢 RESPONSE LENGTH: {len(response)}")
+        print(f"🟢 SOURCES FOUND: {len(sources)}")
         
         # Save to memory if session_id provided
         if request.session_id and memory:
@@ -210,13 +225,22 @@ async def browser_chat(request: ChatRequest):
             except Exception as e:
                 print(f"[DEBUG] Failed to save to memory: {e}")
         
-        return {"response": response, "session_id": request.session_id}
+        # =====================================================
+        # 🔁 MODIFIED: Return both response and sources
+        # Previously: Only returned {"response": response, "session_id": ...}
+        # Now: Also includes sources dictionary
+        # =====================================================
+        return {
+            "response": response,
+            "sources": sources,
+            "session_id": request.session_id
+        }
         
     except Exception as e:
         print(f"🔴 ERROR IN BROWSER CHAT: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"error": str(e)}
+        return {"error": str(e), "sources": {}}
 @app.post("/api/test-browser")
 async def test_browser(request: ChatRequest):
     print("🔥 TEST ENDPOINT WORKING!")

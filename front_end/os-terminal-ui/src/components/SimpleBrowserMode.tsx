@@ -14,6 +14,14 @@ export default function SimpleBrowserMode() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // =====================================================
+  // ✅ NEW: Sources state for citation tooltips
+  // Previously: No sources tracking
+  // Now: Stores source URLs by citation number
+  // =====================================================
+  const [sources, setSources] = useState<{[key: string]: string}>({});
+  // =====================================================
+
+  // =====================================================
   // 🔁 REPLACED: HTTP session ID instead of WebSocket
   // Previously: WebSocket connection with ref
   // Now: Simple session ID for tracking conversations
@@ -27,9 +35,58 @@ export default function SimpleBrowserMode() {
   }, [messages]);
 
   // =====================================================
-  // ✅ NEW: Function to render text with clickable links
-  // Previously: Plain text display only
-  // Now: URLs become clickable anchor tags
+  // ✅ NEW: Function to render text with citation tooltips
+  // Previously: renderMessageWithLinks (plain URLs)
+  // Now: Renders citations [1], [2] with hover tooltips showing URLs
+  // =====================================================
+  const renderMessageWithCitations = (text: string) => {
+    // Split text by citation patterns [1], [2], etc.
+    const parts = text.split(/(\[\d+\])/g);
+    
+    return parts.map((part, index) => {
+      // Check if this part is a citation like [1]
+      const citationMatch = part.match(/\[(\d+)\]/);
+      
+      if (citationMatch) {
+        const citationNum = citationMatch[1];
+        const url = sources[citationNum];
+        
+        return (
+          <span 
+            key={index}
+            className="relative group inline-block mx-0.5"
+          >
+            <span className="text-blue-400 font-bold cursor-help hover:text-blue-300 transition-colors">
+              {part}
+            </span>
+            {url && (
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-zinc-900 text-white text-xs p-2 rounded whitespace-nowrap z-50 border border-zinc-700 shadow-lg">
+                <a 
+                  href={url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline block max-w-xs truncate"
+                  title={url}
+                >
+                  {url}
+                </a>
+                <span className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-zinc-900"></span>
+              </span>
+            )}
+          </span>
+        );
+      }
+      
+      // Regular text - preserve line breaks
+      return <span key={index}>{part}</span>;
+    });
+  };
+  // =====================================================
+
+  // =====================================================
+  // ✅ NEW: Function to render regular text with clickable URLs (fallback)
+  // Previously: Main renderer
+  // Now: Used for messages without citations
   // =====================================================
   const renderMessageWithLinks = (text: string) => {
     // Regular expression to find URLs
@@ -37,11 +94,9 @@ export default function SimpleBrowserMode() {
     
     // Split text by URLs
     const parts = text.split(urlRegex);
-    // 🔁 FIXED: TypeScript error - matches can be null
     const matches = text.match(urlRegex);
     
     return parts.map((part, index) => {
-      // 🔁 FIXED: Check if matches exists before using includes
       if (matches && matches.includes(part)) {
         return (
           <a 
@@ -55,7 +110,6 @@ export default function SimpleBrowserMode() {
           </a>
         );
       }
-      // Regular text - preserve line breaks
       return <span key={index}>{part}</span>;
     });
   };
@@ -84,7 +138,7 @@ export default function SimpleBrowserMode() {
         ? 'https://vibrant-patience-production-68b7.up.railway.app'
         : 'http://localhost:8000';
       
-      const url = `${baseUrl}/api/browser/chat`;  // Use the new working endpoint
+      const url = `${baseUrl}/api/browser/chat`;
       console.log("🔵 [BROWSER] Fetch URL:", url);
       
       const requestBody = {
@@ -121,13 +175,23 @@ export default function SimpleBrowserMode() {
         }]);
       } else {
         console.log("✅ [BROWSER] Success! Response length:", data.response?.length);
+        
+        // =================================================
+        // ✅ NEW: Store sources from response
+        // Previously: Only stored response text
+        // Now: Also stores sources dictionary for citations
+        // =================================================
+        if (data.sources) {
+          console.log("📚 [BROWSER] Sources received:", data.sources);
+          setSources(data.sources);
+        }
+        
         setMessages(prev => [...prev, { 
           role: "assistant", 
           content: data.response 
         }]);
       }
     } catch (error) {
-      // 🔁 FIXED: Type assertion for error
       const err = error as Error;
       console.error("🔴 [BROWSER] Fetch error:", err);
       console.error("🔴 [BROWSER] Error details:", {
@@ -177,13 +241,14 @@ export default function SimpleBrowserMode() {
               }`}
             >
               {/* ================================================= */}
-              {/* 🔁 REPLACED: Plain text with clickable links */}
-              {/* Previously: {msg.content.split('\n').map(...)} */}
-              {/* Now: renderMessageWithLinks that makes URLs clickable */}
+              {/* 🔁 REPLACED: Choose renderer based on whether we have sources */}
+              {/* Previously: Always used renderMessageWithLinks */}
+              {/* Now: Uses renderMessageWithCitations for messages with sources */}
               {/* ================================================= */}
-              {/* 🔁 FIXED: Changed break-words to wrap-break-word (Tailwind suggestion) */}
               <div className="whitespace-pre-wrap wrap-break-word">
-                {renderMessageWithLinks(msg.content)}
+                {idx === messages.length - 1 && Object.keys(sources).length > 0
+                  ? renderMessageWithCitations(msg.content)
+                  : renderMessageWithLinks(msg.content)}
               </div>
             </div>
           </div>
