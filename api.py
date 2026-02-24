@@ -210,13 +210,7 @@ async def health():
 # The entire WebSocket browser endpoint has been removed
 # =====================================================
 
-@app.on_event("startup")
-async def show_routes():
-    print("="*60)
-    print("REGISTERED ROUTES:")
-    for route in app.routes:
-        print(f"  {route.path} - {route.methods}")
-    print("="*60)
+
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
@@ -414,6 +408,18 @@ async def ws_endpoint(ws: WebSocket):
         if msg_type == "message" and chat_id:
             memory.save_chat_message(chat_id, "assistant", agent_response)
             print(f"[DEBUG] Saved assistant response, length={len(agent_response)}")
+
+@app.on_event("startup")
+async def show_routes():
+    print("="*60)
+    print("REGISTERED ROUTES:")
+    for route in app.routes:
+        methods = getattr(route, 'methods', None)
+        if methods:
+            print(f"  {route.path} - {methods}")
+        else:
+            print(f"  {route.path} - WebSocket")
+    print("="*60)
 
 # At the VERY BOTTOM of api.py, add this:
 if __name__ == "__main__":
