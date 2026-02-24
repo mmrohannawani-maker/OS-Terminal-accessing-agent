@@ -138,6 +138,8 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
 
+print("✅ Registering POST /api/browser-chat")
+
 @app.post("/api/browser-chat")
 async def browser_chat(request: ChatRequest):
     """
