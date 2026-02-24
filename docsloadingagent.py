@@ -82,19 +82,7 @@ except Exception as e:
 # ✅ FIX: Pre-initialize agent at module load
 # This prevents timeout issues on Railway
 # =====================================================
-print("🚀 Pre-initializing research agent (this may take 20-30 seconds)...")
-_research_agent = None
 
-def get_research_agent():
-    """Get or create the research agent singleton"""
-    global _research_agent
-    if _research_agent is None:
-        _research_agent = create_research_agent()
-        print("✅ Research agent initialized and ready")
-    return _research_agent
-
-# Initialize immediately so it's ready when first request arrives
-get_research_agent()
 # =====================================================
 
 # =====================================================
@@ -241,12 +229,12 @@ def research_and_summarize(query: str, max_links: int = 3) -> str:
         formatted_output += f"   {source}\n"
     formatted_output += "\n"
     
-    for content in all_content:
-        formatted_output += f"\n{'─'*60}\n"
-        formatted_output += f"📄 SOURCE [{content['index']}]: {content['title']}\n"
-        formatted_output += f"🔗 URL: {content['url']}\n"
-        formatted_output += f"{'─'*60}\n"
-        formatted_output += f"{content['content']}\n\n"
+    # for content in all_content:
+    #     formatted_output += f"\n{'─'*60}\n"
+    #     formatted_output += f"📄 SOURCE [{content['index']}]: {content['title']}\n"
+    #     formatted_output += f"🔗 URL: {content['url']}\n"
+    #     formatted_output += f"{'─'*60}\n"
+    #     formatted_output += f"{content['content']}\n\n"
     
     debug_print("TOOL", f"✅ Formatted output: {len(formatted_output)} chars")
     
@@ -313,8 +301,7 @@ IMPORTANT RULES:
 RESPONSE FORMAT:
 - Start with a brief overview
 - Present findings with inline citations [1], [2]
-- End with a "Sources" section listing all URLs
-
+- DO NOT add a separate "Sources" section at the end strictly
 Let's begin!
 """
 
@@ -394,6 +381,20 @@ def process_browser_query(query: str, session_id: Optional[str] = None) -> str:
             debug_print("MEMORY", f"Failed to save assistant response: {e}")
     
     return full_response
+
+print("🚀 Pre-initializing research agent (this may take 20-30 seconds)...")
+_research_agent = None
+
+def get_research_agent():
+    """Get or create the research agent singleton"""
+    global _research_agent
+    if _research_agent is None:
+        _research_agent = create_research_agent()
+        print("✅ Research agent initialized and ready")
+    return _research_agent
+
+# Initialize immediately so it's ready when first request arrives
+get_research_agent()
 # =====================================================
 
 # ❌ REMOVED: WebSocket handler (handle_research_websocket)

@@ -27,6 +27,41 @@ export default function SimpleBrowserMode() {
   }, [messages]);
 
   // =====================================================
+  // ✅ NEW: Function to render text with clickable links
+  // Previously: Plain text display only
+  // Now: URLs become clickable anchor tags
+  // =====================================================
+  const renderMessageWithLinks = (text: string) => {
+    // Regular expression to find URLs
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    
+    // Split text by URLs
+    const parts = text.split(urlRegex);
+    // 🔁 FIXED: TypeScript error - matches can be null
+    const matches = text.match(urlRegex);
+    
+    return parts.map((part, index) => {
+      // 🔁 FIXED: Check if matches exists before using includes
+      if (matches && matches.includes(part)) {
+        return (
+          <a 
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 underline hover:text-blue-300 break-all"
+          >
+            {part}
+          </a>
+        );
+      }
+      // Regular text - preserve line breaks
+      return <span key={index}>{part}</span>;
+    });
+  };
+  // =====================================================
+
+  // =====================================================
   // 🔁 REPLACED: HTTP fetch instead of WebSocket send
   // Previously: WebSocket connection with timeout and retries
   // Now: Simple POST request - no connection management needed
@@ -47,9 +82,9 @@ export default function SimpleBrowserMode() {
       // Determine the correct URL based on environment
       const baseUrl = import.meta.env.PROD 
         ? 'https://vibrant-patience-production-68b7.up.railway.app'
-        : '';
+        : 'http://localhost:8000';
       
-      const url = `${baseUrl}/api/browser/chat`;  // ← New path
+      const url = `${baseUrl}/api/browser/chat`;  // Use the new working endpoint
       console.log("🔵 [BROWSER] Fetch URL:", url);
       
       const requestBody = {
@@ -141,12 +176,15 @@ export default function SimpleBrowserMode() {
                   : "bg-zinc-800 text-zinc-100 rounded-bl-none"
               }`}
             >
-              {msg.content.split('\n').map((line, i) => (
-                <span key={i}>
-                  {line}
-                  {i < msg.content.split('\n').length - 1 && <br />}
-                </span>
-              ))}
+              {/* ================================================= */}
+              {/* 🔁 REPLACED: Plain text with clickable links */}
+              {/* Previously: {msg.content.split('\n').map(...)} */}
+              {/* Now: renderMessageWithLinks that makes URLs clickable */}
+              {/* ================================================= */}
+              {/* 🔁 FIXED: Changed break-words to wrap-break-word (Tailwind suggestion) */}
+              <div className="whitespace-pre-wrap wrap-break-word">
+                {renderMessageWithLinks(msg.content)}
+              </div>
             </div>
           </div>
         ))}
