@@ -210,6 +210,14 @@ async def health():
 # The entire WebSocket browser endpoint has been removed
 # =====================================================
 
+@app.on_event("startup")
+async def show_routes():
+    print("="*60)
+    print("REGISTERED ROUTES:")
+    for route in app.routes:
+        print(f"  {route.path} - {route.methods}")
+    print("="*60)
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
