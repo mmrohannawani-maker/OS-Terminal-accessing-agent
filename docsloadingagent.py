@@ -141,6 +141,7 @@ class TavilySearchClient:
 @tool(
     "research_and_summarize",
     description="Search the web for information about a query, load the content from found URLs, and provide summaries with source citations.",
+    response_format="content_and_artifact"  # ← ADD THIS
 )
 def research_and_summarize(query: str, max_links: int = 3) -> tuple:
     """
@@ -303,11 +304,10 @@ IMPORTANT RULES:
 OUTPUT FORMAT - STRICT RULES:
 - Start with a brief overview
 - Present findings with inline citations [1], [2]
-- END with a "Sources" section listing all URLs in this EXACT format:
+- DO NOT add a separate "Sources:" section at the end
 
-Sources:
-[1] [Title - Description] - URL
-[2] [Title - Description] - URL
+
+
 
 STRICT RULES:
 - DO NOT add any text after the Sources section
@@ -360,10 +360,13 @@ def create_research_agent():
 # Previously: WebSocket handler (handle_research_websocket)
 # Now: Simple function that returns response for HTTP endpoint
 # =====================================================
-def process_browser_query(query: str, session_id: Optional[str] = None) -> str:
+def process_browser_query(query: str, session_id: Optional[str] = None) -> tuple:
     """
-    Process a browser mode query and return the response
+    Process a browser mode query and return the response and sources
     This is called by the HTTP endpoint in api.py
+    
+    Returns:
+        tuple: (response_text, sources_dict)
     """
     print(f"[BROWSER AGENT] Processing query: {query[:50]}...")
     
@@ -384,26 +387,56 @@ def process_browser_query(query: str, session_id: Optional[str] = None) -> str:
     }
     
     # Get response (not streaming for HTTP)
-    full_response = ""
     result = agent.invoke(agent_input)
     
-    # Extract response
-    if hasattr(result, 'content'):
-        full_response = result.content
+    # =====================================================
+    # 🔁 MODIFIED: Handle different response formats
+    # Now properly extracts both response text and sources
+    # =====================================================
+    
+    response_text = ""
+    sources_dict = {}
+    
+    # Case 1: Tool returned tuple with response_format="content_and_artifact"
+    if hasattr(result, 'content') and hasattr(result, 'artifact'):
+        response_text = result.content
+        sources_dict = result.artifact
+        debug_print("RESPONSE", f"Extracted from artifact: content length={len(response_text)}, sources={len(sources_dict)}")
+    
+    # Case 2: Result is a tuple (backward compatibility)
+    elif isinstance(result, tuple) and len(result) == 2:
+        response_text, sources_dict = result
+        debug_print("RESPONSE", f"Extracted from tuple: content length={len(response_text)}, sources={len(sources_dict)}")
+    
+    # Case 3: Result has content attribute (AIMessage)
+    elif hasattr(result, 'content'):
+        response_text = result.content
+        debug_print("RESPONSE", f"Extracted from content attribute: length={len(response_text)}")
+    
+    # Case 4: Result is a dict with messages
     elif isinstance(result, dict) and 'messages' in result:
         for msg in result['messages']:
             if hasattr(msg, 'content') and msg.content:
-                full_response += msg.content
+                response_text += msg.content
+        debug_print("RESPONSE", f"Extracted from messages dict: length={len(response_text)}")
+    
+    # Case 5: Fallback to string conversion
+    else:
+        response_text = str(result)
+        debug_print("RESPONSE", f"Fallback string conversion: length={len(response_text)}")
     
     # Save assistant response if memory available
-    if memory and full_response and session_id:
+    if memory and response_text and session_id:
         try:
-            memory.add_assistant_message(f"[{session_id}] {full_response[:500]}...")
+            memory.add_assistant_message(f"[{session_id}] {response_text[:500]}...")
             debug_print("MEMORY", "Assistant response saved to PostgreSQL")
         except Exception as e:
             debug_print("MEMORY", f"Failed to save assistant response: {e}")
     
-    return full_response
+    # =====================================================
+    # ✅ Return both response text and sources
+    # =====================================================
+    return response_text, sources_dict
 
 print("🚀 Pre-initializing research agent (this may take 20-30 seconds)...")
 _research_agent = None

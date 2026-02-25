@@ -35,81 +35,66 @@ export default function SimpleBrowserMode() {
   }, [messages]);
 
   // =====================================================
-  // ✅ NEW: Function to render text with citation tooltips
-  // Previously: renderMessageWithLinks (plain URLs)
-  // Now: Renders citations [1], [2] with hover tooltips showing URLs
+  // 🔁 FIXED: Function to render text with clickable citations
+  // Previously: Citations showed tooltips only
+  // Now: Citations are clickable links that open URLs directly
   // =====================================================
   const renderMessageWithCitations = (text: string) => {
-    // Split text by citation patterns [1], [2], etc.
-    const parts = text.split(/(\[\d+\])/g);
-    
+    // Split by citation patterns [1], [2], [3] (with spaces)
+    console.log("🔍 RENDERING TEXT:", text);
+    console.log("🔍 CURRENT SOURCES DICTIONARY:", sources);
+    const parts = text.split(/(\[\s*\d+\s*\])/g);
+    console.log("🔍 SPLIT PARTS:", parts);
+  
     return parts.map((part, index) => {
       // Check if this part is a citation like [1]
-      const citationMatch = part.match(/\[(\d+)\]/);
-      
+      const citationMatch = part.match(/\[\s*(\d+)\s*\]/);
+    
       if (citationMatch) {
         const citationNum = citationMatch[1];
         const url = sources[citationNum];
-        
+
+        console.log(`🔍 FOUND CITATION [${citationNum}] → URL:`, url);
+        console.log(`🔍 URL EXISTS?`, !!url);
+      
+        if (!url) {
+          return <span key={index} className="text-gray-500">{part}</span>;
+        }
+      
         return (
           <span 
-            key={index}
-            className="relative group inline-block mx-0.5"
+            key={index} 
+            className="relative inline-block group"
           >
-            <span className="text-blue-400 font-bold cursor-help hover:text-blue-300 transition-colors">
+            {/* Clickable blue underlined number */}
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 underline hover:text-blue-800 font-medium cursor-pointer mx-0.5"
+            >
               {part}
+            </a>
+          
+            {/* Tooltip with clickable link on hover */}
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs py-2 px-3 rounded-lg whitespace-nowrap z-50 shadow-lg min-w-50">
+              <a 
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-300 hover:text-blue-100 underline block "
+                title={url}
+              >
+                {url}
+              </a>
+              {/* Tooltip arrow */}
+              <span className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-800"></span>
             </span>
-            {url && (
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-zinc-900 text-white text-xs p-2 rounded whitespace-nowrap z-50 border border-zinc-700 shadow-lg">
-                <a 
-                  href={url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-blue-400 hover:underline block max-w-xs truncate"
-                  title={url}
-                >
-                  {url}
-                </a>
-                <span className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-zinc-900"></span>
-              </span>
-            )}
           </span>
         );
       }
-      
-      // Regular text - preserve line breaks
-      return <span key={index}>{part}</span>;
-    });
-  };
-  // =====================================================
-
-  // =====================================================
-  // ✅ NEW: Function to render regular text with clickable URLs (fallback)
-  // Previously: Main renderer
-  // Now: Used for messages without citations
-  // =====================================================
-  const renderMessageWithLinks = (text: string) => {
-    // Regular expression to find URLs
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
     
-    // Split text by URLs
-    const parts = text.split(urlRegex);
-    const matches = text.match(urlRegex);
-    
-    return parts.map((part, index) => {
-      if (matches && matches.includes(part)) {
-        return (
-          <a 
-            key={index}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-400 underline hover:text-blue-300 break-all"
-          >
-            {part}
-          </a>
-        );
-      }
+      // Regular text
       return <span key={index}>{part}</span>;
     });
   };
@@ -165,7 +150,9 @@ export default function SimpleBrowserMode() {
       }
       
       const data = await response.json();
-      console.log("🔵 [BROWSER] Response data:", data);
+      console.log("🔵 RAW RESPONSE DATA:", JSON.stringify(data, null, 2));
+      console.log("🔵 RESPONSE TEXT:", data.response);
+      console.log("🔵 SOURCES DICTIONARY:", data.sources);
       
       if (data.error) {
         console.log("🔴 [BROWSER] Error in response:", data.error);
@@ -177,19 +164,36 @@ export default function SimpleBrowserMode() {
         console.log("✅ [BROWSER] Success! Response length:", data.response?.length);
         
         // =================================================
-        // ✅ NEW: Store sources from response
-        // Previously: Only stored response text
-        // Now: Also stores sources dictionary for citations
+        // 🔁 FIXED: Handle tuple format from backend
+        // Previously: Expected simple response
+        // Now: Handles array format [text, sources_dict]
         // =================================================
-        if (data.sources) {
-          console.log("📚 [BROWSER] Sources received:", data.sources);
+        if (Array.isArray(data.response)) {
+          // It's a tuple: [response_text, sources_dict]
+          const [responseText, sourcesDict] = data.response;
+          
+          console.log("📚 [BROWSER] Sources received (tuple):", sourcesDict);
+          setSources(sourcesDict);
+          setMessages(prev => [...prev, { 
+            role: "assistant", 
+            content: responseText 
+          }]);
+        } else if (data.sources) {
+          // Separate fields format
+          console.log("📚 [BROWSER] Sources received (separate):", data.sources);
           setSources(data.sources);
+          setMessages(prev => [...prev, { 
+            role: "assistant", 
+            content: data.response 
+          }]);
+        } else {
+          // Plain text response
+          setMessages(prev => [...prev, { 
+            role: "assistant", 
+            content: data.response 
+          }]);
         }
-        
-        setMessages(prev => [...prev, { 
-          role: "assistant", 
-          content: data.response 
-        }]);
+        // =================================================
       }
     } catch (error) {
       const err = error as Error;
@@ -241,14 +245,12 @@ export default function SimpleBrowserMode() {
               }`}
             >
               {/* ================================================= */}
-              {/* 🔁 REPLACED: Choose renderer based on whether we have sources */}
-              {/* Previously: Always used renderMessageWithLinks */}
-              {/* Now: Uses renderMessageWithCitations for messages with sources */}
+              {/* 🔁 FIXED: Always use citations renderer for ALL messages */}
+              {/* Previously: Only used for last message with sources */}
+              {/* Now: Always tries to render citations, falls back gracefully */}
               {/* ================================================= */}
               <div className="whitespace-pre-wrap wrap-break-word">
-                {idx === messages.length - 1 && Object.keys(sources).length > 0
-                  ? renderMessageWithCitations(msg.content)
-                  : renderMessageWithLinks(msg.content)}
+                {renderMessageWithCitations(msg.content)}
               </div>
             </div>
           </div>

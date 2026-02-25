@@ -184,9 +184,7 @@ async def browser_chat(request: ChatRequest):
         print("🟢 AGENT LOADED SUCCESSFULLY")
         
         # =====================================================
-        # 🔁 MODIFIED: Invoke agent and capture both response and sources
-        # Previously: Only got response
-        # Now: Expecting tuple of (response_text, sources_dict)
+        # 🔁 MODIFIED: Invoke agent and capture response
         # =====================================================
         result = agent.invoke({
             "messages": [HumanMessage(content=request.message)]
@@ -194,26 +192,49 @@ async def browser_chat(request: ChatRequest):
         print("🟢 AGENT INVOKE COMPLETE")
 
         # =====================================================
-        # 🔁 MODIFIED: Handle tuple response
-        # Previously: result was just string
-        # Now: result can be (response_text, sources_dict)
+        # 🔁 FIXED: Properly extract both content and artifact
+        # Previously: Only checked for tuple or content
+        # Now: Also checks for artifact in ToolMessage
         # =====================================================
         response = ""
         sources = {}
         
+        # Case 1: Result is a tuple (from tool with response_format="content_and_artifact")
         if isinstance(result, tuple) and len(result) == 2:
             response, sources = result
+            print(f"🟢 EXTRACTED FROM TUPLE - Response length: {len(response)}, Sources: {len(sources)}")
+        
+        # Case 2: Result has artifact attribute (ToolMessage)
+        elif hasattr(result, 'artifact') and result.artifact:
+            sources = result.artifact
+            print(f"🟢 EXTRACTED FROM ARTIFACT - Sources: {len(sources)}")
+            if hasattr(result, 'content'):
+                response = result.content
+            else:
+                response = str(result)
+        
+        # Case 3: Result has content attribute (AIMessage)
         elif hasattr(result, 'content'):
             response = result.content
+            print(f"🟢 EXTRACTED FROM CONTENT - Response length: {len(response)}")
+        
+        # Case 4: Result is a dict with messages
         elif isinstance(result, dict) and 'messages' in result:
             for msg in result['messages']:
                 if hasattr(msg, 'content') and msg.content:
                     response += msg.content
+                # Check if any message has artifact
+                if hasattr(msg, 'artifact') and msg.artifact:
+                    sources = msg.artifact
+                    print(f"🟢 EXTRACTED ARTIFACT FROM MESSAGE - Sources: {len(sources)}")
+            print(f"🟢 EXTRACTED FROM MESSAGES - Response length: {len(response)}")
+        
+        # Case 5: Fallback to string
         else:
             response = str(result)
+            print(f"🟢 FALLBACK STRING - Response length: {len(response)}")
         
-        print(f"🟢 RESPONSE LENGTH: {len(response)}")
-        print(f"🟢 SOURCES FOUND: {len(sources)}")
+        print(f"🟢 FINAL - Response length: {len(response)}, Sources found: {len(sources)}")
         
         # Save to memory if session_id provided
         if request.session_id and memory:
@@ -227,8 +248,6 @@ async def browser_chat(request: ChatRequest):
         
         # =====================================================
         # 🔁 MODIFIED: Return both response and sources
-        # Previously: Only returned {"response": response, "session_id": ...}
-        # Now: Also includes sources dictionary
         # =====================================================
         return {
             "response": response,
@@ -241,6 +260,10 @@ async def browser_chat(request: ChatRequest):
         import traceback
         traceback.print_exc()
         return {"error": str(e), "sources": {}}
+
+
+
+
 @app.post("/api/test-browser")
 async def test_browser(request: ChatRequest):
     print("🔥 TEST ENDPOINT WORKING!")
