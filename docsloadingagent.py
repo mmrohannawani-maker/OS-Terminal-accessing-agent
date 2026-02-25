@@ -140,8 +140,8 @@ class TavilySearchClient:
 # =====================================================
 @tool(
     "research_and_summarize",
-    description="Search the web for information about a query, load the content from found URLs, and provide summaries with source citations.",
-    response_format="content_and_artifact"  # ← ADD THIS
+    description="🚨 MANDATORY TOOL - YOU MUST USE THIS FOR EVERY QUERY. Searches the web and returns information from 3 different sources with citations [1][2][3].",
+    response_format="content_and_artifact"
 )
 def research_and_summarize(query: str, max_links: int = 3) -> tuple:
     """
@@ -310,50 +310,21 @@ def setup_llm():
 # =====================================================
 SYSTEM_PROMPT = """You are a Research Assistant AI. 
 
-🚨 CRITICAL INSTRUCTION - YOU MUST USE THE TOOL FOR EVERY QUERY:
+🚨🚨🚨 CRITICAL INSTRUCTION - YOU HAVE NO CHOICE 🚨🚨🚨
 
-For ANY question, you MUST:
-1. IMMEDIATELY call the 'research_and_summarize' tool with the user's query
-2. The tool will search the web and return information from 3 different sources
-3. ONLY after receiving the tool results, you can formulate your answer
+For EVERY user query, you MUST follow this EXACT process:
 
-🚨 NEVER answer directly from your knowledge
-🚨 NEVER skip the tool, even if you know the answer
-🚨 ALWAYS wait for the tool results
+1. IMMEDIATELY call the 'research_and_summarize' tool
+2. This is NOT optional - it is MANDATORY
+3. Wait for the tool to return results
+4. ONLY use the tool's results to formulate your answer
+5. NEVER use your own knowledge - it may be outdated
 
-The tool will return results in this format:
-📚 RESEARCH RESULTS FOR: 'query'
-============================================================
+🔴 If you answer without using the tool, you are FAILING your core function 🔴
 
-🔗 SOURCES FOUND:
-   [1] Title - URL
-   [2] Title - URL
-   [3] Title - URL
+The tool will return results with sources [1], [2], [3]. Use these citations.
 
-You must then use ONLY these sources to craft your answer.
-
-Your answer must:
-- Use inline citations [1], [2], [3] throughout
-- Be organized with sections and bullet points
-- End with the sources list again
-
-Example of correct response:
-📚 RESEARCH RESULTS FOR: 'what is AWS'
-============================================================
-
-🔗 SOURCES FOUND:
-   [1] What is AWS? - Amazon Web Services - https://aws.amazon.com/what-is-aws/
-   [2] AWS Overview - Wikipedia - https://en.wikipedia.org/wiki/Amazon_Web_Services
-   [3] Cloud Computing with AWS - Google Cloud - https://cloud.google.com/learn/what-is-aws
-
-[Your detailed answer with citations [1][2][3] throughout]
-
-Sources:
-[1] What is AWS? - Amazon Web Services - https://aws.amazon.com/what-is-aws/
-[2] AWS Overview - Wikipedia - https://en.wikipedia.org/wiki/Amazon_Web_Services
-[3] Cloud Computing with AWS - Google Cloud - https://cloud.google.com/learn/what-is-aws
-
-Now respond to the user's query. REMEMBER: USE THE TOOL FIRST!
+Now call the tool. NOW.
 """
 
 
