@@ -34,9 +34,10 @@ app = FastAPI()
 # =====================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://vibrant-patience-production-68b7.up.railway.app",
-        "http://localhost:5173",
-        "http://localhost:8000"],
+    allow_origins=["https://vibrant-patience-production-68b7.up.railway.app/",
+                   "https://os-terminal-accessing-agent-production.up.railway.app/",
+                   "http://localhost:5173",
+                   "http://localhost:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
