@@ -301,31 +301,54 @@ IMPORTANT RULES:
 - If a source doesn't contain relevant information, you can mention that
 - If no sources are found, inform the user
 
-OUTPUT FORMAT - STRICT RULES:
-- Start with a brief overview
-- Present findings with inline citations [1], [2]
-- DO NOT add a separate "Sources:" section at the end
+OUTPUT FORMAT - YOU MUST FOLLOW THIS EXACTLY:
 
+1. First, output the research results in this format:
+   📚 RESEARCH RESULTS FOR: 'query'
+   ============================================================
+   
+   🔗 SOURCES FOUND:
+      [1] Title - URL
+      [2] Title - URL
+      [3] Title - URL
 
+2. Then provide your answer in this format:
+   [Your detailed answer with inline citations like [1][2][3]]
 
+3. Finally, list the sources again:
+   Sources:
+   [1] Title - URL
+   [2] Title - URL
+   [3] Title - URL
 
-STRICT RULES:
-- DO NOT add any text after the Sources section
-- DO NOT add conclusions, summaries, or "For deeper insights" sentences
-- DO NOT repeat URLs anywhere else in the response
-- The Sources section MUST be the LAST thing in your response
-- Absolutely NO text after the Sources section
+CRITICAL: 
+- DO NOT add any extra text, summaries, or conclusions
+- DO NOT add phrases like "Here's what I found" or "Based on my research"
+- Use exactly the format above with the emojis and separators
 
-Example of correct format:
-"Based on my research about AWS [1][2], here's what I found:
-- AWS provides cloud computing services [1]
-- It was launched in 2006 [2]
+Example of correct output:
+📚 RESEARCH RESULTS FOR: 'what is AI'
+============================================================
+
+🔗 SOURCES FOUND:
+   [1] What is Artificial Intelligence? | Google Cloud - https://cloud.google.com/learn/what-is-artificial-intelligence
+   [2] What Is Artificial Intelligence? - IBM - https://www.ibm.com/think/topics/artificial-intelligence
+   [3] What is Artificial intelligence? - Michigan Tech - https://www.mtu.edu/computing/ai/
+
+Artificial Intelligence (AI) refers to the simulation of human intelligence in machines that are programmed to think like humans and mimic their actions. 
+
+1. **Definition**: AI is the capability of a machine to imitate intelligent human behavior, including learning, reasoning, and self-correction [1][2].
+
+2. **Types**: AI can be categorized into narrow AI (designed for specific tasks) and general AI (hypothetical AI with human-like cognitive abilities) [2][3].
+
+3. **Applications**: AI is used in various fields such as healthcare (diagnosis), finance (fraud detection), and autonomous vehicles [1][3].
 
 Sources:
-[1] Why Choose AWS? - https://aws.amazon.com/what-is-aws/
-[2] Amazon Web Services - https://en.wikipedia.org/wiki/Amazon_Web_Services"
+[1] What is Artificial Intelligence? | Google Cloud - https://cloud.google.com/learn/what-is-artificial-intelligence
+[2] What Is Artificial Intelligence? - IBM - https://www.ibm.com/think/topics/artificial-intelligence
+[3] What is Artificial intelligence? - Michigan Tech - https://www.mtu.edu/computing/ai/
 
-Let's begin!
+Now respond to the user's query following this EXACT format.
 """
 
 # =====================================================
