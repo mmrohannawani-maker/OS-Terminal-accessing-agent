@@ -279,45 +279,38 @@ async def browser_chat(request: ChatRequest):
         # =====================================================
         # ✅ FIXED: Prioritized Source Extraction
         # =====================================================
+        # =====================================================
+        # 🔁 FIXED: Only extract the LAST assistant message
+        # =====================================================
         response = ""
         sources = {}
 
-        # 1. Check for messages list (most common in LangGraph)
         if isinstance(result, dict) and 'messages' in result:
-            print("🟢 CHECKING RESULT['messages']...")
-            for msg in result['messages']:
-                # Check if THIS message has an artifact (it's likely the ToolMessage)
-                if hasattr(msg, 'artifact') and msg.artifact:
-                    sources = msg.artifact
-                    print(f"🎯 SOURCES FOUND in artifact: {sources}")
-                    # Don't break, continue to find content
+            print(f"🟢 FOUND {len(result['messages'])} messages in result")
+    
+            # Get the last message (which should be the final answer)
+            if result['messages']:
+                last_msg = result['messages'][-1]
+        
+                # Extract content from last message
+                if hasattr(last_msg, 'content') and last_msg.content:
+                    response = last_msg.content
+                    print(f"🟢 EXTRACTED LAST MESSAGE - Length: {len(response)}")
+        
+                # Check for sources in any message (keep this)
+                for msg in result['messages']:
+                    if hasattr(msg, 'artifact') and msg.artifact:
+                        sources = msg.artifact
+                        print(f"🎯 SOURCES FOUND in message")
 
-                # Collect content from all messages (AIMessages, ToolMessages)
-                if hasattr(msg, 'content') and msg.content:
-                    response += msg.content
-
-            print(f"🟢 EXTRACTED FROM MESSAGES - Response length: {len(response)}")
-
-        # 2. If no messages, check if result itself is a tuple
         elif isinstance(result, tuple) and len(result) == 2:
             response, sources = result
-            print(f"🟢 EXTRACTED FROM TUPLE - Sources: {len(sources)}")
+            print(f"🟢 EXTRACTED FROM TUPLE")
 
-        # 3. Check for direct artifact on result
-        elif hasattr(result, 'artifact') and result.artifact:
-            sources = result.artifact
-            print(f"🟢 EXTRACTED FROM ARTIFACT - Sources: {len(sources)}")
-            if hasattr(result, 'content'):
-                response = result.content
-            else:
-                response = str(result)
-
-        # 4. Simple content attribute
         elif hasattr(result, 'content'):
             response = result.content
             print(f"🟢 EXTRACTED FROM CONTENT")
 
-        # 5. Fallback
         else:
             response = str(result)
             print(f"🟢 FALLBACK TO STRING")
