@@ -174,11 +174,9 @@ async def browser_chat(request: ChatRequest):
     """
     Simple HTTP endpoint for Browser Mode
     Returns complete response in one request with sources
+    NO MEMORY - Each query is independent
     """
     print("🔥🔥🔥 FUNCTION IS BEING CALLED! 🔥🔥🔥")
-    # print(f"[BROWSER MODE] Received: {request.message[:50]}...")
-    # print(f"🟢 RECEIVED REQUEST: {request.message}")
-    # print(f"🟢 SESSION ID: {request.session_id}")
     
     try:
         # Import here to avoid circular imports
@@ -187,101 +185,36 @@ async def browser_chat(request: ChatRequest):
         print("🟢 AGENT LOADED SUCCESSFULLY")
 
         # =====================================================
-        # ✅ NEW: Detect if user is asking about previous conversation
+        # ✅ NO MEMORY - Just the current query
         # =====================================================
-        is_summary_question = any(phrase in request.message.lower() for phrase in [
-            "what did we talk about", 
-            "what was our last conversation",
-            "recap", 
-            "summary of our conversation",
-            "what have we discussed",
-            "last time we talked",
-            "what did we discuss"
-        ])
-
-        summary_requested = False
-        original_message = request.message
-        
-        if is_summary_question and request.session_id and memory:
-            try:
-                # Load ALL history for this session
-                full_history = memory.load_chat_messages(request.session_id, limit=50)
-                print(f"🟢 LOADED {len(full_history)} messages for summary")
-                
-                if len(full_history) > 2:
-                    # Format ONLY user messages for the summary
-                    user_messages = []
-                    for role, content in full_history:
-                        if role == "user" and "what is" not in content.lower()[:20]:
-                            user_messages.append(content)
-            
-                    if user_messages:
-                        history_text = "\n".join([f"- {msg}" for msg in user_messages[-10:]])
-                    
-                        # Create a special prompt for summarization
-                        summary_prompt = f"""Based on the following user questions from our conversation, provide a summary of what topics we discussed:
-
-        {history_text}
-
-        Please provide a brief summary of the main topics the user asked about."""
-                
-                    request.message = summary_prompt
-                    print("🟢 USING SUMMARY PROMPT")
-            except Exception as e:
-                print(f"🔴 ERROR preparing summary: {e}")
-        # =====================================================
-
-        # =====================================================
-        # ✅ FIXED: Force correct history loading
-        # =====================================================
-        conversation_messages = []  # Use a fresh, clear variable name
-
-        if request.session_id and memory:
-            try:
-                # Load previous messages for this session
-                history = memory.load_chat_messages(request.session_id, limit=30)
-                print(f"🟢 LOADED {len(history)} raw messages from history")
-        
-                # We need to build a clean conversation history
-                # Start with the most recent messages and work backwards
-                recent_history = history[-20:]  # Last 20 messages
-        
-                for role, content in history[-15:]:
-                    if role == "user":
-                        conversation_messages.append(HumanMessage(content=content))
-                        print(f"   ➕ Added USER message from history: {content[:30]}...")
-                    else:
-                        # ✅ KEEP EVERY assistant message - tool output is VITAL context
-                        conversation_messages.append(AIMessage(content=content))
-                        print(f"   ➕ Added ASSISTANT message from history: {content[:30]}...")
-            except Exception as e:
-                print(f"[DEBUG] Failed to load history: {e}")
-
-
-        # Add the current user message (which might be the summary prompt)
+        conversation_messages = []
+        # Add ONLY the current user message - NO HISTORY
         conversation_messages.append(HumanMessage(content=request.message))
-        print(f"🟢 TOTAL MESSAGES IN CONTEXT: {len(conversation_messages)}")
-        # print(f"🟢 SENDING TO AGENT: {[type(m).__name__ for m in conversation_messages]}")
+        print(f"🟢 NO MEMORY MODE - Sending ONLY current query")
+        print(f"🟢 QUERY: {request.message[:50]}...")
         # =====================================================
 
         # =====================================================
-        # 🔁 MODIFIED: Invoke agent with full conversation context
+        # 🔁 Invoke agent with ONLY current query
         # =====================================================
         result = agent.invoke({"messages": conversation_messages})
         print("🟢 AGENT INVOKE COMPLETE")
 
+        # =====================================================
+        # 🔍 Tool usage check
+        # =====================================================
         print("="*60)
         print("🔍 TOOL USAGE CHECK:")
 
         if isinstance(result, dict) and 'messages' in result:
             tool_found = False
             for msg in result['messages']:
-                # Check for tool calls (agent deciding to use tool)
+                # Check for tool calls
                 if hasattr(msg, 'tool_calls') and msg.tool_calls:
                     print(f"✅ TOOL WAS CALLED! Tool calls: {msg.tool_calls}")
                     tool_found = True
         
-                # Check for tool artifacts (tool actually ran and produced output)
+                # Check for tool artifacts
                 if hasattr(msg, 'artifact') and msg.artifact:
                     print(f"✅ TOOL OUTPUT FOUND! Sources: {msg.artifact}")
                     tool_found = True
@@ -293,10 +226,7 @@ async def browser_chat(request: ChatRequest):
         print("="*60)
 
         # =====================================================
-        # ✅ FIXED: Prioritized Source Extraction
-        # =====================================================
-        # =====================================================
-        # 🔁 FIXED: Only extract the LAST assistant message
+        # ✅ Extract response and sources
         # =====================================================
         response = ""
         sources = {}
@@ -304,7 +234,7 @@ async def browser_chat(request: ChatRequest):
         if isinstance(result, dict) and 'messages' in result:
             print(f"🟢 FOUND {len(result['messages'])} messages in result")
     
-            # Get the last message (which should be the final answer)
+            # Get the last message (final answer)
             if result['messages']:
                 last_msg = result['messages'][-1]
         
@@ -313,11 +243,11 @@ async def browser_chat(request: ChatRequest):
                     response = last_msg.content
                     print(f"🟢 EXTRACTED LAST MESSAGE - Length: {len(response)}")
         
-                # Check for sources in any message (keep this)
+                # Check for sources in any message
                 for msg in result['messages']:
                     if hasattr(msg, 'artifact') and msg.artifact:
                         sources = msg.artifact
-                        print(f"🎯 SOURCES FOUND in message")
+                        print(f"🎯 SOURCES FOUND: {sources}")
 
         elif isinstance(result, tuple) and len(result) == 2:
             response, sources = result
@@ -332,38 +262,15 @@ async def browser_chat(request: ChatRequest):
             print(f"🟢 FALLBACK TO STRING")
 
         print(f"✅ FINAL - Response length: {len(response)}, Sources found: {len(sources)}")
-        # =====================================================
         
         # =====================================================
-        # 🔁 FIXED: Save to memory with clean format
+        # ❌ MEMORY SAVING COMPLETELY REMOVED
+        # No database storage at all
         # =====================================================
-        if request.session_id and memory:
-            try:
-                # Save user message (original, not the summary prompt)
-                if summary_requested:
-                    memory.add_user_message(f"[{request.session_id}] {original_message}")
-                    print(f"🟢 USER MESSAGE SAVED (original query)")
-                else:
-                    memory.add_user_message(f"[{request.session_id}] {request.message}")
-                    print(f"🟢 USER MESSAGE SAVED")
-                
-                # Save assistant response
-                if response:
-                    memory.add_assistant_message(f"[{request.session_id}] {response}")
-                    print(f"🟢 ASSISTANT RESPONSE SAVED ({len(response)} chars)")
-            except Exception as e:
-                print(f"[DEBUG] Failed to save to memory: {e}")
-        
-        # =====================================================
-        # 🔁 MODIFIED: Return both response and sources
-        # =====================================================
-        print(f"🔴🔴🔴 RESPONSE BEING SENT TO FRONTEND:")
-        # print(f"🔴 LENGTH: {len(response)}")
-        # print(f"🔴 PREVIEW: {response[:200]}...")
-        # print(f"🔴 CONTAINS 'what is regression'? {'what is regression' in response.lower()}")
-        # print(f"🔴 CONTAINS 'classification'? {'classification' in response.lower()}")
 
-
+        # =====================================================
+        # ✅ Return response
+        # =====================================================
         return {
             "response": response,
             "sources": sources,
@@ -375,7 +282,6 @@ async def browser_chat(request: ChatRequest):
         import traceback
         traceback.print_exc()
         return {"error": str(e), "sources": {}}
-
 # =====================================================
 
 # =====================================================
