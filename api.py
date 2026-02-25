@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, WebSocket
 import asyncio
 from agent_builder import build_terminal_agent, run_agent_stream
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from terminal_tools import set_user_path
 from fastapi.responses import StreamingResponse
 import asyncio
@@ -185,13 +185,37 @@ async def browser_chat(request: ChatRequest):
         from docsloadingagent import get_research_agent
         agent = get_research_agent()
         print("🟢 AGENT LOADED SUCCESSFULLY")
+
+        # =====================================================
+        # ✅ NEW: Load chat history from memory
+        # =====================================================
+        history = []
+        if request.session_id and memory:
+            try:
+                # Load previous messages for this session
+                history = memory.load_chat_messages(request.session_id)
+                print(f"🟢 LOADED {len(history)} messages from history")
+            except Exception as e:
+                print(f"[DEBUG] Failed to load history: {e}")
+
+        # =====================================================
+        # ✅ NEW: Build conversation context
+        # =====================================================
+        messages = []
+
+        # Add history to context
+        for role, content in history[-10:]:  # Last 10 messages for context
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            else:
+                messages.append(AIMessage(content=content))
         
+        # Add current message
+        messages.append(HumanMessage(content=request.message))
         # =====================================================
         # 🔁 MODIFIED: Invoke agent and capture response
         # =====================================================
-        result = agent.invoke({
-            "messages": [HumanMessage(content=request.message)]
-        })
+        result = agent.invoke({"messages": messages})
         print("🟢 AGENT INVOKE COMPLETE")
 
         # =====================================================

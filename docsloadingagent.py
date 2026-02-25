@@ -372,22 +372,34 @@ def process_browser_query(query: str, session_id: Optional[str] = None) -> tuple
     
     # Get the pre-initialized agent
     agent = get_research_agent()
+    # =====================================================
+    # ✅ NEW: Load history
+    # =====================================================
+    messages = [HumanMessage(content=query)]
     
     # Save user message to PostgreSQL if memory available
     if memory and session_id:
         try:
-            memory.add_user_message(f"[{session_id}] {query}")
-            debug_print("MEMORY", "User message saved to PostgreSQL")
+            history = memory.load_chat_messages(session_id)
+            # Build conversation from history
+            conv_messages = []
+            for role, content in history[-10:]:
+                if role == "user":
+                    conv_messages.append(HumanMessage(content=content))
+                else:
+                    conv_messages.append(AIMessage(content=content))
+            conv_messages.append(HumanMessage(content=query))
+            messages = conv_messages
         except Exception as e:
-            debug_print("MEMORY", f"Failed to save user message: {e}")
+            debug_print("MEMORY", f"Failed to load history: {e}")
     
     # Prepare input
-    agent_input = {
-        "messages": [HumanMessage(content=query)]
-    }
+    # agent_input = {
+    #     "messages": [HumanMessage(content=query)]
+    # }
     
     # Get response (not streaming for HTTP)
-    result = agent.invoke(agent_input)
+    result = agent.invoke({"messages": messages})
     
     # =====================================================
     # 🔁 MODIFIED: Handle different response formats
@@ -426,16 +438,14 @@ def process_browser_query(query: str, session_id: Optional[str] = None) -> tuple
         debug_print("RESPONSE", f"Fallback string conversion: length={len(response_text)}")
     
     # Save assistant response if memory available
+    # Save to memory
     if memory and response_text and session_id:
         try:
+            memory.add_user_message(f"[{session_id}] {query}")
             memory.add_assistant_message(f"[{session_id}] {response_text[:500]}...")
-            debug_print("MEMORY", "Assistant response saved to PostgreSQL")
         except Exception as e:
-            debug_print("MEMORY", f"Failed to save assistant response: {e}")
+            debug_print("MEMORY", f"Failed to save: {e}")
     
-    # =====================================================
-    # ✅ Return both response text and sources
-    # =====================================================
     return response_text, sources_dict
 
 print("🚀 Pre-initializing research agent (this may take 20-30 seconds)...")
