@@ -187,54 +187,113 @@ async def browser_chat(request: ChatRequest):
         print("🟢 AGENT LOADED SUCCESSFULLY")
 
         # =====================================================
-        # 🔁 FIXED: Load chat history from memory
-        # Previously: Only loaded history but didn't clean it
-        # Now: Properly loads and formats history for the agent
+        # ✅ NEW: Detect if user is asking about previous conversation
         # =====================================================
-        messages = []
+        is_summary_question = any(phrase in request.message.lower() for phrase in [
+            "what did we talk about", 
+            "what was our last conversation",
+            "recap", 
+            "summary of our conversation",
+            "what have we discussed",
+            "last time we talked",
+            "what did we discuss"
+        ])
+
+        summary_requested = False
+        original_message = request.message
         
+        if is_summary_question and request.session_id and memory:
+            try:
+                # Load ALL history for this session (up to 50 messages)
+                full_history = memory.load_chat_messages(request.session_id, limit=50)
+                print(f"🟢 LOADED {len(full_history)} messages for summary")
+                
+                if len(full_history) > 2:  # At least user+assistant exchange
+                    summary_requested = True
+                    
+                    # Format history for the LLM to summarize
+                    history_text = ""
+                    for role, content in full_history[-20:]:  # Last 20 messages for summary
+                        speaker = "User" if role == "user" else "Assistant"
+                        history_text += f"{speaker}: {content}\n\n"
+                    
+                    # Create a special prompt for summarization
+                    summary_prompt = f"""Based on the following conversation history, provide a concise summary of what we discussed.
+
+Conversation history:
+{history_text}
+
+Please provide a brief summary of the main topics and key points from our conversation. Focus on the key topics and information shared.
+"""
+                    # Replace the user's question with this summary prompt
+                    request.message = summary_prompt
+                    print("🟢 REPLACED QUERY WITH SUMMARY PROMPT")
+            except Exception as e:
+                print(f"🔴 ERROR preparing summary: {e}")
+        # =====================================================
+
+        # =====================================================
+        # ✅ FIXED: Force correct history loading
+        # =====================================================
+        conversation_messages = []  # Use a fresh, clear variable name
+
         if request.session_id and memory:
             try:
                 # Load previous messages for this session
-                history = memory.load_chat_messages(request.session_id)
-                print(f"🟢 LOADED {len(history)} messages from history")
-                
-                # Add history to context (last 10 messages for context)
-                for role, content in history[-10:]:
+                history = memory.load_chat_messages(request.session_id, limit=50)
+                print(f"🟢 LOADED {len(history)} raw messages from history")
+
+                # Add history to context (last 15 messages for better context)
+                for role, content in history[-15:]:
                     if role == "user":
-                        messages.append(HumanMessage(content=content))
+                        conversation_messages.append(HumanMessage(content=content))
+                        print(f"   ➕ Added USER message from history: {content[:30]}...")
                     else:
-                        messages.append(AIMessage(content=content))
+                        conversation_messages.append(AIMessage(content=content))
+                        print(f"   ➕ Added ASSISTANT message from history: {content[:30]}...")
             except Exception as e:
                 print(f"[DEBUG] Failed to load history: {e}")
-        
-        # Add current message
-        messages.append(HumanMessage(content=request.message))
-        print(f"🟢 TOTAL MESSAGES IN CONTEXT: {len(messages)}")
+
+        # Add the current user message (which might be the summary prompt)
+        conversation_messages.append(HumanMessage(content=request.message))
+        print(f"🟢 TOTAL MESSAGES IN CONTEXT: {len(conversation_messages)}")
+        print(f"🟢 SENDING TO AGENT: {[type(m).__name__ for m in conversation_messages]}")
         # =====================================================
 
         # =====================================================
         # 🔁 MODIFIED: Invoke agent with full conversation context
         # =====================================================
-        result = agent.invoke({"messages": messages})
+        result = agent.invoke({"messages": conversation_messages})
         print("🟢 AGENT INVOKE COMPLETE")
 
         # =====================================================
-        # 🔁 FIXED: Properly extract both content and artifact
+        # ✅ FIXED: Prioritized Source Extraction
         # =====================================================
         response = ""
         sources = {}
 
-        # =====================================================
-        # 🔁 FIXED: Clean extraction logic with no duplicates
-        # =====================================================
+        # 1. Check for messages list (most common in LangGraph)
+        if isinstance(result, dict) and 'messages' in result:
+            print("🟢 CHECKING RESULT['messages']...")
+            for msg in result['messages']:
+                # Check if THIS message has an artifact (it's likely the ToolMessage)
+                if hasattr(msg, 'artifact') and msg.artifact:
+                    sources = msg.artifact
+                    print(f"🎯 SOURCES FOUND in artifact: {sources}")
+                    # Don't break, continue to find content
 
-        # Case 1: Result is a tuple (from tool with response_format="content_and_artifact")
-        if isinstance(result, tuple) and len(result) == 2:
+                # Collect content from all messages (AIMessages, ToolMessages)
+                if hasattr(msg, 'content') and msg.content:
+                    response += msg.content
+
+            print(f"🟢 EXTRACTED FROM MESSAGES - Response length: {len(response)}")
+
+        # 2. If no messages, check if result itself is a tuple
+        elif isinstance(result, tuple) and len(result) == 2:
             response, sources = result
-            print(f"🟢 EXTRACTED FROM TUPLE - Response length: {len(response)}, Sources: {len(sources)}")
+            print(f"🟢 EXTRACTED FROM TUPLE - Sources: {len(sources)}")
 
-        # Case 2: Result has artifact attribute (ToolMessage)
+        # 3. Check for direct artifact on result
         elif hasattr(result, 'artifact') and result.artifact:
             sources = result.artifact
             print(f"🟢 EXTRACTED FROM ARTIFACT - Sources: {len(sources)}")
@@ -243,48 +302,31 @@ async def browser_chat(request: ChatRequest):
             else:
                 response = str(result)
 
-        # Case 3: Result is a dict with messages (most common for LangGraph)
-        elif isinstance(result, dict) and 'messages' in result:
-            for msg in result['messages']:
-                # Add content to response
-                if hasattr(msg, 'content') and msg.content:
-                    response += msg.content
-    
-                # Check for artifact in ToolMessage
-                if hasattr(msg, 'artifact') and msg.artifact:
-                    sources = msg.artifact
-                    print(f"🟢 EXTRACTED ARTIFACT FROM MESSAGE - Sources: {sources}")
-    
-                # Check for tool_calls that might contain sources
-                if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                    for tool_call in msg.tool_calls:
-                        if hasattr(tool_call, 'artifact') and tool_call.artifact:
-                            sources = tool_call.artifact
-                            print(f"🟢 EXTRACTED FROM TOOL_CALL - Sources: {sources}")
-            print(f"🟢 EXTRACTED FROM MESSAGES - Response length: {len(response)}")
-
-        # Case 4: Result has content attribute (AIMessage)
+        # 4. Simple content attribute
         elif hasattr(result, 'content'):
             response = result.content
-            print(f"🟢 EXTRACTED FROM CONTENT - Response length: {len(response)}")
+            print(f"🟢 EXTRACTED FROM CONTENT")
 
-        # Case 5: Fallback to string
+        # 5. Fallback
         else:
             response = str(result)
-            print(f"🟢 FALLBACK STRING - Response length: {len(response)}")
+            print(f"🟢 FALLBACK TO STRING")
 
-        print(f"🟢 FINAL - Response length: {len(response)}, Sources found: {len(sources)}")
+        print(f"✅ FINAL - Response length: {len(response)}, Sources found: {len(sources)}")
+        # =====================================================
         
         # =====================================================
         # 🔁 FIXED: Save to memory with clean format
-        # Previously: Saved with [session_id] prefix
-        # Now: Still saves with prefix for identification
         # =====================================================
         if request.session_id and memory:
             try:
-                # Save user message
-                memory.add_user_message(f"[{request.session_id}] {request.message}")
-                print(f"🟢 USER MESSAGE SAVED")
+                # Save user message (original, not the summary prompt)
+                if summary_requested:
+                    memory.add_user_message(f"[{request.session_id}] {original_message}")
+                    print(f"🟢 USER MESSAGE SAVED (original query)")
+                else:
+                    memory.add_user_message(f"[{request.session_id}] {request.message}")
+                    print(f"🟢 USER MESSAGE SAVED")
                 
                 # Save assistant response
                 if response:
@@ -307,14 +349,6 @@ async def browser_chat(request: ChatRequest):
         import traceback
         traceback.print_exc()
         return {"error": str(e), "sources": {}}
-
-
-
-@app.post("/api/test-browser")
-async def test_browser(request: ChatRequest):
-    print("🔥 TEST ENDPOINT WORKING!")
-    return {"response": f"Echo: {request.message}"}
-
 
 # =====================================================
 
