@@ -120,7 +120,7 @@ export default function SimpleBrowserMode() {
     try {
       // Determine the correct URL based on environment
       const baseUrl = import.meta.env.PROD 
-        ? 'https://vibrant-patience-production-68b7.up.railway.app'
+        ? 'https://os-terminal-accessing-agent-production.up.railway.app'
         : 'http://localhost:8000';
       
       const url = `${baseUrl}/api/browser/chat`;
