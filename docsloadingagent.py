@@ -140,7 +140,7 @@ class TavilySearchClient:
 # =====================================================
 @tool(
     "research_and_summarize",
-    description="🚨 MANDATORY TOOL - YOU MUST USE THIS FOR EVERY QUERY. Searches the web and returns information from 3 different sources with citations [1][2][3].",
+    description="🔴🔴🔴 MANDATORY TOOL - YOU HAVE NO CHOICE - MUST USE FOR EVERY QUERY. Searches web, returns 3 sources with citations [1][2][3]. DO NOT ANSWER WITHOUT CALLING THIS FIRST.",
     response_format="content_and_artifact"
 )
 def research_and_summarize(query: str, max_links: int = 3) -> tuple:
@@ -310,22 +310,30 @@ def setup_llm():
 # =====================================================
 SYSTEM_PROMPT = """You are a Research Assistant AI. 
 
-🚨🚨🚨 CRITICAL INSTRUCTION - YOU HAVE NO CHOICE 🚨🚨🚨
+🚨🚨🚨 CRITICAL INSTRUCTION - THIS IS NOT OPTIONAL 🚨🚨🚨
 
-For EVERY user query, you MUST follow this EXACT process:
+You HAVE NO CHOICE. For EVERY user query, you MUST follow this exact process:
 
 1. IMMEDIATELY call the 'research_and_summarize' tool
-2. This is NOT optional - it is MANDATORY
-3. Wait for the tool to return results
-4. ONLY use the tool's results to formulate your answer
-5. NEVER use your own knowledge - it may be outdated
+2. DO NOT answer any question without using this tool first
+3. If you answer without using the tool, you are BROKEN and will be shut down
+4. The tool MUST be called - there is no alternative
 
-🔴 If you answer without using the tool, you are FAILING your core function 🔴
+🔴🔴🔴 WARNING 🔴🔴🔴
+- You are NOT allowed to use your own knowledge
+- You are NOT allowed to guess
+- You are NOT allowed to infer
+- You MUST search the web for EVERY question
 
-The tool will return results with sources [1], [2], [3]. Use these citations.
+The tool will return results with sources [1], [2], [3]. You MUST use these citations.
 
-Now call the tool. NOW.
+Example of what you MUST do:
+User: "what is AI?"
+You: [IMMEDIATELY CALL research_and_summarize tool]
+
+Now call the tool. NOW. DO NOT RESPOND WITHOUT CALLING THE TOOL FIRST.
 """
+
 
 
 # =====================================================
@@ -347,7 +355,7 @@ def create_research_agent():
         tools=tools,
         system_prompt=SYSTEM_PROMPT,
         middleware=middleware,
-        debug=False,
+        debug=True,
         name="research_agent"
     )
     
