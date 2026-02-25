@@ -157,6 +157,12 @@ export default function SimpleBrowserMode() {
       console.log("🔵 RAW RESPONSE DATA:", JSON.stringify(data, null, 2));
       console.log("🔵 RESPONSE TEXT:", data.response);
       console.log("🔵 SOURCES DICTIONARY:", data.sources);
+
+      console.log("📦 RECEIVED RESPONSE PACKAGE:", {
+        responsePreview: data.response?.substring(0, 100),
+        responseLength: data.response?.length,
+        sources: data.sources
+      });
       
       if (data.error) {
         console.log("🔴 [BROWSER] Error in response:", data.error);

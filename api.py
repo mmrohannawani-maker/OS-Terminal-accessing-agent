@@ -348,6 +348,13 @@ async def browser_chat(request: ChatRequest):
         # =====================================================
         # 🔁 MODIFIED: Return both response and sources
         # =====================================================
+        print(f"🔴🔴🔴 RESPONSE BEING SENT TO FRONTEND:")
+        print(f"🔴 LENGTH: {len(response)}")
+        print(f"🔴 PREVIEW: {response[:200]}...")
+        print(f"🔴 CONTAINS 'what is regression'? {'what is regression' in response.lower()}")
+        print(f"🔴 CONTAINS 'classification'? {'classification' in response.lower()}")
+
+
         return {
             "response": response,
             "sources": sources,
