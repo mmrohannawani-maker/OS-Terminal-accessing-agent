@@ -224,12 +224,16 @@ async def browser_chat(request: ChatRequest):
         # =====================================================
         response = ""
         sources = {}
-        
+
+        # =====================================================
+        # 🔁 FIXED: Clean extraction logic with no duplicates
+        # =====================================================
+
         # Case 1: Result is a tuple (from tool with response_format="content_and_artifact")
         if isinstance(result, tuple) and len(result) == 2:
             response, sources = result
             print(f"🟢 EXTRACTED FROM TUPLE - Response length: {len(response)}, Sources: {len(sources)}")
-        
+
         # Case 2: Result has artifact attribute (ToolMessage)
         elif hasattr(result, 'artifact') and result.artifact:
             sources = result.artifact
@@ -238,28 +242,37 @@ async def browser_chat(request: ChatRequest):
                 response = result.content
             else:
                 response = str(result)
-        
-        # Case 3: Result has content attribute (AIMessage)
+
+        # Case 3: Result is a dict with messages (most common for LangGraph)
+        elif isinstance(result, dict) and 'messages' in result:
+            for msg in result['messages']:
+                # Add content to response
+                if hasattr(msg, 'content') and msg.content:
+                    response += msg.content
+    
+                # Check for artifact in ToolMessage
+                if hasattr(msg, 'artifact') and msg.artifact:
+                    sources = msg.artifact
+                    print(f"🟢 EXTRACTED ARTIFACT FROM MESSAGE - Sources: {sources}")
+    
+                # Check for tool_calls that might contain sources
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    for tool_call in msg.tool_calls:
+                        if hasattr(tool_call, 'artifact') and tool_call.artifact:
+                            sources = tool_call.artifact
+                            print(f"🟢 EXTRACTED FROM TOOL_CALL - Sources: {sources}")
+            print(f"🟢 EXTRACTED FROM MESSAGES - Response length: {len(response)}")
+
+        # Case 4: Result has content attribute (AIMessage)
         elif hasattr(result, 'content'):
             response = result.content
             print(f"🟢 EXTRACTED FROM CONTENT - Response length: {len(response)}")
-        
-        # Case 4: Result is a dict with messages
-        elif isinstance(result, dict) and 'messages' in result:
-            for msg in result['messages']:
-                if hasattr(msg, 'content') and msg.content:
-                    response += msg.content
-                # Check if any message has artifact
-                if hasattr(msg, 'artifact') and msg.artifact:
-                    sources = msg.artifact
-                    print(f"🟢 EXTRACTED ARTIFACT FROM MESSAGE - Sources: {len(sources)}")
-            print(f"🟢 EXTRACTED FROM MESSAGES - Response length: {len(response)}")
-        
+
         # Case 5: Fallback to string
         else:
             response = str(result)
             print(f"🟢 FALLBACK STRING - Response length: {len(response)}")
-        
+
         print(f"🟢 FINAL - Response length: {len(response)}, Sources found: {len(sources)}")
         
         # =====================================================
