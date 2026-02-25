@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from "react";
 type Message = {
   role: "user" | "assistant";
   content: string;
+  id?: number;
+  partial?: boolean;
 };
 
 export default function SimpleBrowserMode() {
@@ -14,19 +16,23 @@ export default function SimpleBrowserMode() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // =====================================================
-  // ✅ NEW: Sources state for citation tooltips
-  // Previously: No sources tracking
-  // Now: Stores source URLs by citation number
+  // ✅ Sources state for citation tooltips
   // =====================================================
   const [sources, setSources] = useState<{[key: string]: string}>({});
   // =====================================================
 
   // =====================================================
-  // 🔁 REPLACED: HTTP session ID instead of WebSocket
-  // Previously: WebSocket connection with ref
-  // Now: Simple session ID for tracking conversations
+  // 🔁 FIXED: Persistent session ID across page reloads
+  // Previously: New sessionId on every load
+  // Now: Stored in localStorage to persist across refreshes
   // =====================================================
-  const [sessionId] = useState(() => crypto.randomUUID());
+  const [sessionId] = useState(() => {
+    const stored = localStorage.getItem('browserSessionId');
+    if (stored) return stored;
+    const newId = crypto.randomUUID();
+    localStorage.setItem('browserSessionId', newId);
+    return newId;
+  });
   // =====================================================
 
   // Auto-scroll to bottom
@@ -35,9 +41,7 @@ export default function SimpleBrowserMode() {
   }, [messages]);
 
   // =====================================================
-  // 🔁 FIXED: Function to render text with clickable citations
-  // Previously: Citations showed tooltips only
-  // Now: Citations are clickable links that open URLs directly
+  // 🔁 Function to render text with clickable citations
   // =====================================================
   const renderMessageWithCitations = (text: string) => {
     // Split by citation patterns [1], [2], [3] (with spaces)
@@ -77,12 +81,14 @@ export default function SimpleBrowserMode() {
             </a>
           
             {/* Tooltip with clickable link on hover */}
-            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs py-2 px-3 rounded-lg whitespace-nowrap z-50 shadow-lg min-w-50">
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs py-2 px-3 rounded-lg z-50 shadow-lg"
+                  style={{ maxWidth: '90vw', width: 'max-content' }}>
               <a 
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-300 hover:text-blue-100 underline block "
+                className="text-blue-300 hover:text-blue-100 underline block break-all"
+                style={{ wordBreak: 'break-all' }}
                 title={url}
               >
                 {url}
@@ -101,9 +107,7 @@ export default function SimpleBrowserMode() {
   // =====================================================
 
   // =====================================================
-  // 🔁 REPLACED: HTTP fetch instead of WebSocket send
-  // Previously: WebSocket connection with timeout and retries
-  // Now: Simple POST request - no connection management needed
+  // 🔁 HTTP fetch for browser mode
   // =====================================================
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -163,46 +167,21 @@ export default function SimpleBrowserMode() {
       } else {
         console.log("✅ [BROWSER] Success! Response length:", data.response?.length);
         
-        // =================================================
-        // 🔁 FIXED: Handle tuple format from backend
-        // Previously: Expected simple response
-        // Now: Handles array format [text, sources_dict]
-        // =================================================
-        if (Array.isArray(data.response)) {
-          // It's a tuple: [response_text, sources_dict]
-          const [responseText, sourcesDict] = data.response;
-          
-          console.log("📚 [BROWSER] Sources received (tuple):", sourcesDict);
-          setSources(sourcesDict);
-          setMessages(prev => [...prev, { 
-            role: "assistant", 
-            content: responseText 
-          }]);
-        } else if (data.sources) {
-          // Separate fields format
-          console.log("📚 [BROWSER] Sources received (separate):", data.sources);
+        // Handle sources from response
+        if (data.sources) {
+          console.log("📚 [BROWSER] Sources received:", data.sources);
           setSources(data.sources);
-          setMessages(prev => [...prev, { 
-            role: "assistant", 
-            content: data.response 
-          }]);
-        } else {
-          // Plain text response
-          setMessages(prev => [...prev, { 
-            role: "assistant", 
-            content: data.response 
-          }]);
         }
-        // =================================================
+        
+        // Add response to messages
+        setMessages(prev => [...prev, { 
+          role: "assistant", 
+          content: data.response 
+        }]);
       }
     } catch (error) {
       const err = error as Error;
       console.error("🔴 [BROWSER] Fetch error:", err);
-      console.error("🔴 [BROWSER] Error details:", {
-        name: err.name,
-        message: err.message,
-        stack: err.stack
-      });
       
       setMessages(prev => [...prev, { 
         role: "assistant", 
@@ -221,11 +200,11 @@ export default function SimpleBrowserMode() {
         <span className="text-3xl">🌐</span>
         <h2 className="text-2xl font-bold text-blue-400">Browser Mode</h2>
         {/* ================================================= */}
-        {/* ✅ NEW: Simple status indicator - always "Connected" with HTTP */}
+        {/* ✅ Session ID indicator */}
         {/* ================================================= */}
         <div className="ml-auto">
           <span className="text-xs bg-green-600 px-2 py-1 rounded">
-            HTTP Mode
+            Session: {sessionId.slice(0, 8)}
           </span>
         </div>
       </div>
@@ -245,9 +224,7 @@ export default function SimpleBrowserMode() {
               }`}
             >
               {/* ================================================= */}
-              {/* 🔁 FIXED: Always use citations renderer for ALL messages */}
-              {/* Previously: Only used for last message with sources */}
-              {/* Now: Always tries to render citations, falls back gracefully */}
+              {/* Render message with citations */}
               {/* ================================================= */}
               <div className="whitespace-pre-wrap wrap-break-word">
                 {renderMessageWithCitations(msg.content)}

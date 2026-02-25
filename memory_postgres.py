@@ -195,16 +195,58 @@ class PostgresMemory:
         conn.close()
 
     # ✅ NEW: Load messages for a chat (resume chat)
-    def load_chat_messages(self, chat_id):
-        conn = psycopg.connect(self.db_url, autocommit=True)
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT role, content FROM messages WHERE chat_id=%s ORDER BY id",
-                (chat_id,)
-            )
-            rows = cur.fetchall()
-        conn.close()
-        return rows
+    def load_chat_messages(self, session_id: str, limit: int = 50) -> list:
+        """
+        Load messages for a specific session
+        Args:
+            session_id: The session ID to load messages for
+            limit: Maximum number of messages to return (default 50)
+        Returns:
+            List of (role, content) tuples
+        """
+        try:
+            # Connect to database
+            conn = psycopg.connect(self.db_url, autocommit=True)
+        
+            with conn.cursor() as cur:
+                # Query messages for this session (using chat_history table)
+                # Messages are stored with [session_id] prefix in content
+                search_pattern = f"[{session_id}]%"
+            
+                cur.execute("""
+                    SELECT role, content 
+                    FROM chat_history 
+                    WHERE content LIKE %s
+                    ORDER BY timestamp ASC
+                    LIMIT %s
+                """, (search_pattern, limit))
+            
+                rows = cur.fetchall()
+        
+            conn.close()
+        
+            # Clean the content by removing the session ID prefix
+            cleaned_messages = []
+            for role, content in rows:
+                # Remove the [session_id] prefix if present
+                if content.startswith(f"[{session_id}]"):
+                    clean_content = content[len(f"[{session_id}] "):]
+                elif '] ' in content:
+                    # Fallback for any bracketed prefix
+                    clean_content = content.split('] ', 1)[1]
+                else:
+                    clean_content = content
+            
+                cleaned_messages.append((role, clean_content))
+        
+            print(f"📚 LOADED {len(cleaned_messages)} messages for session {session_id[:8]}...")
+            return cleaned_messages
+        
+        except Exception as e:
+            print(f"❌ Error loading messages: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     # ✅ NEW: Sidebar chat list
     def list_chats(self):

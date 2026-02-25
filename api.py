@@ -187,41 +187,40 @@ async def browser_chat(request: ChatRequest):
         print("🟢 AGENT LOADED SUCCESSFULLY")
 
         # =====================================================
-        # ✅ NEW: Load chat history from memory
+        # 🔁 FIXED: Load chat history from memory
+        # Previously: Only loaded history but didn't clean it
+        # Now: Properly loads and formats history for the agent
         # =====================================================
-        history = []
+        messages = []
+        
         if request.session_id and memory:
             try:
                 # Load previous messages for this session
                 history = memory.load_chat_messages(request.session_id)
                 print(f"🟢 LOADED {len(history)} messages from history")
+                
+                # Add history to context (last 10 messages for context)
+                for role, content in history[-10:]:
+                    if role == "user":
+                        messages.append(HumanMessage(content=content))
+                    else:
+                        messages.append(AIMessage(content=content))
             except Exception as e:
                 print(f"[DEBUG] Failed to load history: {e}")
-
-        # =====================================================
-        # ✅ NEW: Build conversation context
-        # =====================================================
-        messages = []
-
-        # Add history to context
-        for role, content in history[-10:]:  # Last 10 messages for context
-            if role == "user":
-                messages.append(HumanMessage(content=content))
-            else:
-                messages.append(AIMessage(content=content))
         
         # Add current message
         messages.append(HumanMessage(content=request.message))
+        print(f"🟢 TOTAL MESSAGES IN CONTEXT: {len(messages)}")
         # =====================================================
-        # 🔁 MODIFIED: Invoke agent and capture response
+
+        # =====================================================
+        # 🔁 MODIFIED: Invoke agent with full conversation context
         # =====================================================
         result = agent.invoke({"messages": messages})
         print("🟢 AGENT INVOKE COMPLETE")
 
         # =====================================================
         # 🔁 FIXED: Properly extract both content and artifact
-        # Previously: Only checked for tuple or content
-        # Now: Also checks for artifact in ToolMessage
         # =====================================================
         response = ""
         sources = {}
@@ -263,13 +262,21 @@ async def browser_chat(request: ChatRequest):
         
         print(f"🟢 FINAL - Response length: {len(response)}, Sources found: {len(sources)}")
         
-        # Save to memory if session_id provided
+        # =====================================================
+        # 🔁 FIXED: Save to memory with clean format
+        # Previously: Saved with [session_id] prefix
+        # Now: Still saves with prefix for identification
+        # =====================================================
         if request.session_id and memory:
             try:
+                # Save user message
                 memory.add_user_message(f"[{request.session_id}] {request.message}")
+                print(f"🟢 USER MESSAGE SAVED")
+                
+                # Save assistant response
                 if response:
-                    memory.add_assistant_message(f"[{request.session_id}] {response[:500]}...")
-                print("🟢 MEMORY SAVED")
+                    memory.add_assistant_message(f"[{request.session_id}] {response}")
+                    print(f"🟢 ASSISTANT RESPONSE SAVED ({len(response)} chars)")
             except Exception as e:
                 print(f"[DEBUG] Failed to save to memory: {e}")
         
@@ -287,7 +294,6 @@ async def browser_chat(request: ChatRequest):
         import traceback
         traceback.print_exc()
         return {"error": str(e), "sources": {}}
-
 
 
 
