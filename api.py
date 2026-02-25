@@ -4,6 +4,8 @@ import asyncio
 from agent_builder import build_terminal_agent, run_agent_stream
 from langchain_core.messages import SystemMessage, HumanMessage
 from terminal_tools import set_user_path
+from fastapi.responses import StreamingResponse
+import asyncio
 
 # =====================================================
 # ✅ ADDED IMPORTS
@@ -496,6 +498,11 @@ async def ws_endpoint(ws: WebSocket):
         if msg_type == "message" and chat_id:
             memory.save_chat_message(chat_id, "assistant", agent_response)
             print(f"[DEBUG] Saved assistant response, length={len(agent_response)}")
+
+# Add this import at the top
+
+
+# Add this new endpoint
 
 # At the VERY BOTTOM of api.py, add this:
 if __name__ == "__main__":
