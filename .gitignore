@@ -89,3 +89,4 @@ os-terminal-ui/node_modules/
 os-terminal-ui/dist/
 os-terminal-ui/build/
 os-terminal-ui/package-lock.json
+docsloadingagent.py
