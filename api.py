@@ -246,20 +246,14 @@ async def browser_chat(request: ChatRequest):
                 # Start with the most recent messages and work backwards
                 recent_history = history[-20:]  # Last 20 messages
         
-                for role, content in recent_history:
+                for role, content in history[-15:]:
                     if role == "user":
-                        # Always add user messages
                         conversation_messages.append(HumanMessage(content=content))
-                        # print(f"   ➕ Added USER message: {content[:30]}...")
+                        print(f"   ➕ Added USER message from history: {content[:30]}...")
                     else:
-                        # Only add assistant messages that are FINAL ANSWERS, not research results
-                        if "Based on my research" in content:
-                            # This is a final answer - add it
-                            conversation_messages.append(AIMessage(content=content))
-                            # print(f"   ➕ Added ASSISTANT final answer: {content[:30]}...")
-                        else:
-                            # Skip research results
-                            print(f"   ⏭️ Skipped assistant research message")
+                        # ✅ KEEP EVERY assistant message - tool output is VITAL context
+                        conversation_messages.append(AIMessage(content=content))
+                        print(f"   ➕ Added ASSISTANT message from history: {content[:30]}...")
             except Exception as e:
                 print(f"[DEBUG] Failed to load history: {e}")
 
