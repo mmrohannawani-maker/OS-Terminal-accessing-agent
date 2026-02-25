@@ -271,8 +271,26 @@ async def browser_chat(request: ChatRequest):
         print("🟢 AGENT INVOKE COMPLETE")
 
         print("="*60)
-        print("🔍 CHECKING IF TOOL WAS USED:")
-        print(f"Result type: {type(result)}")
+        print("🔍 TOOL USAGE CHECK:")
+
+        if isinstance(result, dict) and 'messages' in result:
+            tool_found = False
+            for msg in result['messages']:
+                # Check for tool calls (agent deciding to use tool)
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    print(f"✅ TOOL WAS CALLED! Tool calls: {msg.tool_calls}")
+                    tool_found = True
+        
+                # Check for tool artifacts (tool actually ran and produced output)
+                if hasattr(msg, 'artifact') and msg.artifact:
+                    print(f"✅ TOOL OUTPUT FOUND! Sources: {msg.artifact}")
+                    tool_found = True
+    
+            if not tool_found:
+                print("❌ NO TOOL WAS USED - Agent answered from knowledge")
+        else:
+            print("❌ Unexpected result format")
+        print("="*60)
 
         # =====================================================
         # ✅ FIXED: Prioritized Source Extraction
