@@ -223,24 +223,44 @@ def research_and_summarize(query: str, max_links: int = 3) -> tuple:
     # =================================================
     debug_print("TOOL", "Step 3: Formatting combined content...")
     
-    formatted_output = f"📚 RESEARCH RESULTS FOR: '{query}'\n"
-    formatted_output += "="*60 + "\n\n"
-    formatted_output += "🔗 SOURCES FOUND:\n"
+    # =====================================================
+    # 🔁 FIXED: Add formatting instructions for the LLM
+    # =====================================================
+    formatted_output = f"""📚 RESEARCH RESULTS FOR: '{query}'
+    ============================================================
+
+    🔗 SOURCES FOUND:
+    """
     for source in sources:
         formatted_output += f"   {source}\n"
     formatted_output += "\n"
-    
-    # for content in all_content:
-    #     formatted_output += f"\n{'─'*60}\n"
-    #     formatted_output += f"📄 SOURCE [{content['index']}]: {content['title']}\n"
-    #     formatted_output += f"🔗 URL: {content['url']}\n"
-    #     formatted_output += f"{'─'*60}\n"
-    #     formatted_output += f"{content['content']}\n\n"
-    
+
+    # ADD THESE LINES - Tell the LLM what to do
+    formatted_output += """Based on the sources above, provide a comprehensive answer following this EXACT structure:
+
+    [Write a detailed answer with multiple sections]
+
+    1. **Definition**: [Definition with citations like [1][2]]
+
+    2. **Key Features**: [Key features with citations]
+
+    3. **Applications**: [Applications with citations]
+
+    Then at the end, add:
+
+    Sources:
+    [1] Title - URL
+    [2] Title - URL
+    [3] Title - URL
+
+    Make sure to use inline citations [1], [2], [3] throughout your answer.
+    """
+    # =====================================================
+
     debug_print("TOOL", f"✅ Formatted output: {len(formatted_output)} chars")
-    
+
     sources_dict = {str(i): source['url'] for i, source in enumerate(all_content, 1)}
-    
+
     return formatted_output, sources_dict
 
 # =====================================================
