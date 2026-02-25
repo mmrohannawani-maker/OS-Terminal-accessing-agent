@@ -23,6 +23,8 @@ export default function SimpleBrowserMode() {
 
   // =====================================================
   // 🔁 FIXED: Persistent session ID across page reloads
+  // Previously: New sessionId on every load
+  // Now: Stored in localStorage to persist across refreshes
   // =====================================================
   const [sessionId] = useState(() => {
     const stored = localStorage.getItem('browserSessionId');
@@ -39,8 +41,7 @@ export default function SimpleBrowserMode() {
   }, [messages]);
 
   // =====================================================
-  // 🔁 FIXED: Function to render text with clickable citations
-  // Now properly handles when sources are available
+  // 🔁 Function to render text with clickable citations
   // =====================================================
   const renderMessageWithCitations = (text: string) => {
     // Split by citation patterns [1], [2], [3] (with spaces)
@@ -60,18 +61,8 @@ export default function SimpleBrowserMode() {
         console.log(`🔍 FOUND CITATION [${citationNum}] → URL:`, url);
         console.log(`🔍 URL EXISTS?`, !!url);
       
-        // 🔁 FIXED: Always render something, even without URL
-        // Grey if no URL, blue+clickable if URL exists
         if (!url) {
-          return (
-            <span 
-              key={index} 
-              className="text-gray-500 font-medium mx-0.5"
-              title="Source URL not available"
-            >
-              {part}
-            </span>
-          );
+          return <span key={index} className="text-gray-500">{part}</span>;
         }
       
         return (
@@ -85,7 +76,6 @@ export default function SimpleBrowserMode() {
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 underline hover:text-blue-800 font-medium cursor-pointer mx-0.5"
-              title={`Click to open: ${url}`}
             >
               {part}
             </a>
@@ -99,6 +89,7 @@ export default function SimpleBrowserMode() {
                 rel="noopener noreferrer"
                 className="text-blue-300 hover:text-blue-100 underline block break-all"
                 style={{ wordBreak: 'break-all' }}
+                title={url}
               >
                 {url}
               </a>
@@ -131,6 +122,7 @@ export default function SimpleBrowserMode() {
     setIsLoading(true);
     
     try {
+      // Determine the correct URL based on environment
       const baseUrl = import.meta.env.PROD 
         ? 'https://os-terminal-accessing-agent-production.up.railway.app'
         : 'http://localhost:8000';
@@ -146,20 +138,34 @@ export default function SimpleBrowserMode() {
       
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(requestBody)
       });
       
       console.log("🔵 [BROWSER] Response status:", response.status);
+      console.log("🔵 [BROWSER] Response OK:", response.ok);
       
       if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
+        const errorText = await response.text();
+        console.log("🔴 [BROWSER] Error response text:", errorText);
+        throw new Error(`HTTP error ${response.status}: ${errorText}`);
       }
       
       const data = await response.json();
-      console.log("🔵 RAW RESPONSE DATA:", data);
+      console.log("🔵 RAW RESPONSE DATA:", JSON.stringify(data, null, 2));
+      console.log("🔵 RESPONSE TEXT:", data.response);
+      console.log("🔵 SOURCES DICTIONARY:", data.sources);
+
+      console.log("📦 RECEIVED RESPONSE PACKAGE:", {
+        responsePreview: data.response?.substring(0, 100),
+        responseLength: data.response?.length,
+        sources: data.sources
+      });
       
       if (data.error) {
+        console.log("🔴 [BROWSER] Error in response:", data.error);
         setMessages(prev => [...prev, { 
           role: "assistant", 
           content: `❌ Error: ${data.error}` 
@@ -167,15 +173,10 @@ export default function SimpleBrowserMode() {
       } else {
         console.log("✅ [BROWSER] Success! Response length:", data.response?.length);
         
-        // =====================================================
-        // 🔁 FIXED: Clear old sources and set new ones
-        // =====================================================
-        if (data.sources && Object.keys(data.sources).length > 0) {
-          console.log("📚 [BROWSER] Setting sources:", data.sources);
+        // Handle sources from response
+        if (data.sources) {
+          console.log("📚 [BROWSER] Sources received:", data.sources);
           setSources(data.sources);
-        } else {
-          console.log("⚠️ [BROWSER] No sources received");
-          setSources({}); // Clear sources if none received
         }
         
         // Add response to messages
@@ -185,7 +186,9 @@ export default function SimpleBrowserMode() {
         }]);
       }
     } catch (error) {
-      console.error("🔴 [BROWSER] Fetch error:", error);
+      const err = error as Error;
+      console.error("🔴 [BROWSER] Fetch error:", err);
+      
       setMessages(prev => [...prev, { 
         role: "assistant", 
         content: "❌ Failed to connect to server. Please try again." 
@@ -202,6 +205,9 @@ export default function SimpleBrowserMode() {
       <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-800">
         <span className="text-3xl">🌐</span>
         <h2 className="text-2xl font-bold text-blue-400">Browser Mode</h2>
+        {/* ================================================= */}
+        {/* ✅ Session ID indicator */}
+        {/* ================================================= */}
         <div className="ml-auto">
           <span className="text-xs bg-green-600 px-2 py-1 rounded">
             Session: {sessionId.slice(0, 8)}
@@ -223,6 +229,9 @@ export default function SimpleBrowserMode() {
                   : "bg-zinc-800 text-zinc-100 rounded-bl-none"
               }`}
             >
+              {/* ================================================= */}
+              {/* Render message with citations */}
+              {/* ================================================= */}
               <div className="whitespace-pre-wrap wrap-break-word">
                 {renderMessageWithCitations(msg.content)}
               </div>
