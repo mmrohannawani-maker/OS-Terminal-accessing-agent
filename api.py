@@ -204,30 +204,29 @@ async def browser_chat(request: ChatRequest):
         
         if is_summary_question and request.session_id and memory:
             try:
-                # Load ALL history for this session (up to 50 messages)
+                # Load ALL history for this session
                 full_history = memory.load_chat_messages(request.session_id, limit=50)
                 print(f"🟢 LOADED {len(full_history)} messages for summary")
                 
-                if len(full_history) > 2:  # At least user+assistant exchange
-                    summary_requested = True
+                if len(full_history) > 2:
+                    # Format ONLY user messages for the summary
+                    user_messages = []
+                    for role, content in full_history:
+                        if role == "user" and "what is" not in content.lower()[:20]:
+                            user_messages.append(content)
+            
+                    if user_messages:
+                        history_text = "\n".join([f"- {msg}" for msg in user_messages[-10:]])
                     
-                    # Format history for the LLM to summarize
-                    history_text = ""
-                    for role, content in full_history[-20:]:  # Last 20 messages for summary
-                        speaker = "User" if role == "user" else "Assistant"
-                        history_text += f"{speaker}: {content}\n\n"
-                    
-                    # Create a special prompt for summarization
-                    summary_prompt = f"""Based on the following conversation history, provide a concise summary of what we discussed.
+                        # Create a special prompt for summarization
+                        summary_prompt = f"""Based on the following user questions from our conversation, provide a summary of what topics we discussed:
 
-Conversation history:
-{history_text}
+        {history_text}
 
-Please provide a brief summary of the main topics and key points from our conversation. Focus on the key topics and information shared.
-"""
-                    # Replace the user's question with this summary prompt
+        Please provide a brief summary of the main topics the user asked about."""
+                
                     request.message = summary_prompt
-                    print("🟢 REPLACED QUERY WITH SUMMARY PROMPT")
+                    print("🟢 USING SUMMARY PROMPT")
             except Exception as e:
                 print(f"🔴 ERROR preparing summary: {e}")
         # =====================================================
@@ -240,19 +239,30 @@ Please provide a brief summary of the main topics and key points from our conver
         if request.session_id and memory:
             try:
                 # Load previous messages for this session
-                history = memory.load_chat_messages(request.session_id, limit=50)
+                history = memory.load_chat_messages(request.session_id, limit=30)
                 print(f"🟢 LOADED {len(history)} raw messages from history")
-
-                # Add history to context (last 15 messages for better context)
-                for role, content in history[-15:]:
+        
+                # We need to build a clean conversation history
+                # Start with the most recent messages and work backwards
+                recent_history = history[-20:]  # Last 20 messages
+        
+                for role, content in recent_history:
                     if role == "user":
+                        # Always add user messages
                         conversation_messages.append(HumanMessage(content=content))
-                        print(f"   ➕ Added USER message from history: {content[:30]}...")
+                        print(f"   ➕ Added USER message: {content[:30]}...")
                     else:
-                        conversation_messages.append(AIMessage(content=content))
-                        print(f"   ➕ Added ASSISTANT message from history: {content[:30]}...")
+                        # Only add assistant messages that are FINAL ANSWERS, not research results
+                        if "Based on my research" in content:
+                            # This is a final answer - add it
+                            conversation_messages.append(AIMessage(content=content))
+                            print(f"   ➕ Added ASSISTANT final answer: {content[:30]}...")
+                        else:
+                            # Skip research results
+                            print(f"   ⏭️ Skipped assistant research message")
             except Exception as e:
                 print(f"[DEBUG] Failed to load history: {e}")
+
 
         # Add the current user message (which might be the summary prompt)
         conversation_messages.append(HumanMessage(content=request.message))

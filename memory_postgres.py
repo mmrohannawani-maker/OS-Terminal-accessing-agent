@@ -198,19 +198,11 @@ class PostgresMemory:
     def load_chat_messages(self, session_id: str, limit: int = 50) -> list:
         """
         Load messages for a specific session
-        Args:
-            session_id: The session ID to load messages for
-            limit: Maximum number of messages to return (default 50)
-        Returns:
-            List of (role, content) tuples
         """
         try:
-            # Connect to database
             conn = psycopg.connect(self.db_url, autocommit=True)
         
             with conn.cursor() as cur:
-                # Query messages for this session (using chat_history table)
-                # Messages are stored with [session_id] prefix in content
                 search_pattern = f"[{session_id}]%"
             
                 cur.execute("""
@@ -228,24 +220,30 @@ class PostgresMemory:
             # Clean the content by removing the session ID prefix
             cleaned_messages = []
             for role, content in rows:
-                # Remove the [session_id] prefix if present
+                # Remove the [session_id] prefix
                 if content.startswith(f"[{session_id}]"):
                     clean_content = content[len(f"[{session_id}] "):]
-                elif '] ' in content:
-                    # Fallback for any bracketed prefix
-                    clean_content = content.split('] ', 1)[1]
                 else:
                     clean_content = content
             
+                # IMPORTANT: For assistant messages, we need to extract ONLY the final answer
+                # NOT the tool's research results
+                if role == "assistant" and "RESEARCH RESULTS FOR:" in clean_content:
+                    # This is a tool message with research - we need to extract just the summary
+                    # Find where the actual answer starts
+                    if "Based on my research" in clean_content:
+                        # Extract from "Based on my research" to the end
+                        parts = clean_content.split("Based on my research", 1)
+                        if len(parts) > 1:
+                            clean_content = "Based on my research" + parts[1]
+            
                 cleaned_messages.append((role, clean_content))
+                print(f"📚 LOADED {role} message: {clean_content[:50]}...")
         
-            print(f"📚 LOADED {len(cleaned_messages)} messages for session {session_id[:8]}...")
             return cleaned_messages
         
         except Exception as e:
             print(f"❌ Error loading messages: {e}")
-            import traceback
-            traceback.print_exc()
             return []
     
     # ✅ NEW: Sidebar chat list
