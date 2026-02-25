@@ -176,9 +176,9 @@ async def browser_chat(request: ChatRequest):
     Returns complete response in one request with sources
     """
     print("🔥🔥🔥 FUNCTION IS BEING CALLED! 🔥🔥🔥")
-    print(f"[BROWSER MODE] Received: {request.message[:50]}...")
-    print(f"🟢 RECEIVED REQUEST: {request.message}")
-    print(f"🟢 SESSION ID: {request.session_id}")
+    # print(f"[BROWSER MODE] Received: {request.message[:50]}...")
+    # print(f"🟢 RECEIVED REQUEST: {request.message}")
+    # print(f"🟢 SESSION ID: {request.session_id}")
     
     try:
         # Import here to avoid circular imports
@@ -250,13 +250,13 @@ async def browser_chat(request: ChatRequest):
                     if role == "user":
                         # Always add user messages
                         conversation_messages.append(HumanMessage(content=content))
-                        print(f"   ➕ Added USER message: {content[:30]}...")
+                        # print(f"   ➕ Added USER message: {content[:30]}...")
                     else:
                         # Only add assistant messages that are FINAL ANSWERS, not research results
                         if "Based on my research" in content:
                             # This is a final answer - add it
                             conversation_messages.append(AIMessage(content=content))
-                            print(f"   ➕ Added ASSISTANT final answer: {content[:30]}...")
+                            # print(f"   ➕ Added ASSISTANT final answer: {content[:30]}...")
                         else:
                             # Skip research results
                             print(f"   ⏭️ Skipped assistant research message")
@@ -267,7 +267,7 @@ async def browser_chat(request: ChatRequest):
         # Add the current user message (which might be the summary prompt)
         conversation_messages.append(HumanMessage(content=request.message))
         print(f"🟢 TOTAL MESSAGES IN CONTEXT: {len(conversation_messages)}")
-        print(f"🟢 SENDING TO AGENT: {[type(m).__name__ for m in conversation_messages]}")
+        # print(f"🟢 SENDING TO AGENT: {[type(m).__name__ for m in conversation_messages]}")
         # =====================================================
 
         # =====================================================
@@ -275,6 +275,10 @@ async def browser_chat(request: ChatRequest):
         # =====================================================
         result = agent.invoke({"messages": conversation_messages})
         print("🟢 AGENT INVOKE COMPLETE")
+
+        print("="*60)
+        print("🔍 CHECKING IF TOOL WAS USED:")
+        print(f"Result type: {type(result)}")
 
         # =====================================================
         # ✅ FIXED: Prioritized Source Extraction
@@ -342,10 +346,10 @@ async def browser_chat(request: ChatRequest):
         # 🔁 MODIFIED: Return both response and sources
         # =====================================================
         print(f"🔴🔴🔴 RESPONSE BEING SENT TO FRONTEND:")
-        print(f"🔴 LENGTH: {len(response)}")
-        print(f"🔴 PREVIEW: {response[:200]}...")
-        print(f"🔴 CONTAINS 'what is regression'? {'what is regression' in response.lower()}")
-        print(f"🔴 CONTAINS 'classification'? {'classification' in response.lower()}")
+        # print(f"🔴 LENGTH: {len(response)}")
+        # print(f"🔴 PREVIEW: {response[:200]}...")
+        # print(f"🔴 CONTAINS 'what is regression'? {'what is regression' in response.lower()}")
+        # print(f"🔴 CONTAINS 'classification'? {'classification' in response.lower()}")
 
 
         return {

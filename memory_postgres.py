@@ -238,7 +238,7 @@ class PostgresMemory:
                             clean_content = "Based on my research" + parts[1]
             
                 cleaned_messages.append((role, clean_content))
-                print(f"📚 LOADED {role} message: {clean_content[:50]}...")
+                # print(f"📚 LOADED {role} message: {clean_content[:50]}...")
         
             return cleaned_messages
         

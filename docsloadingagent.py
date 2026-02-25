@@ -271,6 +271,11 @@ def track_sources_middleware(tool_call, handler):
     """Middleware that ensures the LLM knows which content comes from which source"""
     tool_name = tool_call.name if hasattr(tool_call, 'name') else str(tool_call)
     debug_print("MIDDLEWARE", f"Intercepting tool: {tool_name}")
+
+     # =====================================================
+    print(f"🔔🔔🔔 TOOL IS ABOUT TO BE CALLED: {tool_name}")
+    print(f"🔔 Tool arguments: {tool_call.args if hasattr(tool_call, 'args') else 'N/A'}")
+    # =====================================================
     
     result = handler(tool_call)
     
@@ -371,7 +376,7 @@ def create_research_agent():
         tools=tools,
         system_prompt=SYSTEM_PROMPT,
         middleware=middleware,
-        debug=True,
+        debug=False,
         name="research_agent"
     )
     
